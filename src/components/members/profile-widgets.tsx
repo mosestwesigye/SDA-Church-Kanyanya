@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useRef, useState, useTransition } from "react";
 import { Dialog } from "@/components/ui/dialog";
+import { purgeMemberAction } from "@/app/(staff)/transfers/actions";
 import {
   addMinistryAction,
   deleteMemberAction,
@@ -185,12 +186,30 @@ export function DocumentUpload({ memberId }: { memberId: string }) {
 }
 
 /** The "···" menu: send to clean-up, delete or restore. */
-export function ProfileMenu({ memberId, deleted, canDelete, canRestore, canFlag }: { memberId: string; deleted: boolean; canDelete: boolean; canRestore: boolean; canFlag: boolean }) {
+export function ProfileMenu({
+  memberId,
+  memberCode,
+  deleted,
+  canDelete,
+  canRestore,
+  canFlag,
+  purgeFrom,
+}: {
+  memberId: string;
+  memberCode: string;
+  deleted: boolean;
+  canDelete: boolean;
+  canRestore: boolean;
+  canFlag: boolean;
+  /** Set for admins on deleted records: ISO date from which purge is allowed. */
+  purgeFrom?: string | null;
+}) {
   const [open, setOpen] = useState(false);
-  const [dialog, setDialog] = useState<null | "delete" | "flag">(null);
+  const [dialog, setDialog] = useState<null | "delete" | "flag" | "purge">(null);
   const [reason, setReason] = useState("");
   const { pending, msg, run } = useRun();
-  if (!canDelete && !canRestore && !canFlag) return null;
+  const purgeReady = purgeFrom ? new Date(purgeFrom) <= new Date() : false;
+  if (!canDelete && !canRestore && !canFlag && !purgeFrom) return null;
   return (
     <div className="relative">
       <button type="button" aria-label="More actions" aria-expanded={open} onClick={() => setOpen((o) => !o)} className="btn btn-secondary px-3">
@@ -203,28 +222,45 @@ export function ProfileMenu({ memberId, deleted, canDelete, canRestore, canFlag 
           )}
           {!deleted && canFlag && <MenuItem onClick={() => (setOpen(false), setDialog("flag"))}>Send to clean-up queue</MenuItem>}
           {!deleted && canDelete && <MenuItem danger onClick={() => (setOpen(false), setDialog("delete"))}>Delete member…</MenuItem>}
+          {deleted && purgeFrom && (
+            purgeReady ? (
+              <MenuItem danger onClick={() => (setOpen(false), setDialog("purge"))}>Purge personal data…</MenuItem>
+            ) : (
+              <p className="px-3 py-2 text-[13px] text-ink-2">Can be purged from {new Date(purgeFrom).toLocaleDateString("en-GB")}</p>
+            )
+          )}
         </div>
       )}
       <Dialog
         open={dialog !== null}
         onClose={() => setDialog(null)}
-        title={dialog === "delete" ? "Delete this member?" : "Send to clean-up queue"}
+        title={dialog === "delete" ? "Delete this member?" : dialog === "purge" ? "Purge personal data permanently?" : "Send to clean-up queue"}
         footer={
           <>
             <button type="button" className="btn btn-secondary" onClick={() => setDialog(null)}>Cancel</button>
             <button
               type="button"
-              className={dialog === "delete" ? "btn btn-danger" : "btn btn-primary"}
-              disabled={pending || (dialog === "delete" && reason.trim().length < 3)}
-              onClick={() => run(() => (dialog === "delete" ? deleteMemberAction(memberId, reason) : flagMemberAction(memberId, reason)), () => setDialog(null))}
+              className={dialog === "flag" ? "btn btn-primary" : "btn btn-danger"}
+              disabled={pending || (dialog === "delete" && reason.trim().length < 3) || (dialog === "purge" && reason.trim().toUpperCase() !== memberCode)}
+              onClick={() =>
+                run(
+                  () => (dialog === "delete" ? deleteMemberAction(memberId, reason) : dialog === "purge" ? purgeMemberAction(memberId, reason) : flagMemberAction(memberId, reason)),
+                  () => setDialog(null),
+                )
+              }
             >
-              {dialog === "delete" ? "Delete" : "Send"}
+              {dialog === "delete" ? "Delete" : dialog === "purge" ? "Purge permanently" : "Send"}
             </button>
           </>
         }
       >
         {dialog === "delete" && <p className="mb-3 text-ink-2">The record moves to “Recently deleted” and can be restored. The member ID is never reused.</p>}
-        <label htmlFor="pm-reason" className="field-label">{dialog === "delete" ? "Reason" : "What needs checking? (optional)"}</label>
+        {dialog === "purge" && (
+          <p className="mb-3 text-ink-2">
+            All personal data, documents and photos for this member are erased and cannot be recovered. The ID {memberCode} stays retired. Type the ID to confirm.
+          </p>
+        )}
+        <label htmlFor="pm-reason" className="field-label">{dialog === "delete" ? "Reason" : dialog === "purge" ? "Member ID" : "What needs checking? (optional)"}</label>
         <input id="pm-reason" className="input" value={reason} onChange={(e) => setReason(e.target.value)} />
       </Dialog>
       <Msg msg={msg} />

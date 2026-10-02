@@ -11,6 +11,7 @@ import { requirePermission } from "@/server/auth/session";
 import { can } from "@/server/authz/policy";
 import { db } from "@/server/db";
 import { getMemberProfile, type MemberProfile, type ProfileTab } from "@/server/members/profile";
+import { retentionDays } from "@/server/workflows/status";
 
 export const metadata: Metadata = { title: "Member" };
 
@@ -121,7 +122,15 @@ export default async function MemberPage({ params, searchParams }: { params: Pro
                 Edit record
               </Link>
             )}
-            <ProfileMenu memberId={m.id} deleted={Boolean(m.deletedAt)} canDelete={caps.del} canRestore={caps.restore} canFlag={can(ctx, "cleanup", "use")} />
+            <ProfileMenu
+              memberId={m.id}
+              memberCode={m.memberId}
+              deleted={Boolean(m.deletedAt)}
+              canDelete={caps.del}
+              canRestore={caps.restore}
+              canFlag={can(ctx, "cleanup", "use")}
+              purgeFrom={m.deletedAt && can(ctx, "member", "purge") ? new Date(new Date(m.deletedAt).getTime() + (await retentionDays(db)) * 86400_000).toISOString() : null}
+            />
           </div>
         </header>
 
