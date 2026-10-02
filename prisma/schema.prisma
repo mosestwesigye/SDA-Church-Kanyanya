@@ -684,6 +684,8 @@ model ImportBatch {
   id          String            @id @default(cuid())
   fileName    String
   fileHash    String
+  /// Uploaded workbook (private storage) so the wizard can re-read it between steps.
+  storageKey  String?
   sheetName   String
   headerRow   Int
   columnMap   Json

@@ -9,6 +9,7 @@ import type { CompletenessRules } from "@/lib/completeness";
 import { detectColumns, extractRecords, type ColumnMap, type RawRecord } from "./columns";
 import { normalizeRow, type Issue, type Lookups, type NormalizedRow } from "./normalize-row";
 import { readWorkbook, type SheetRows } from "./read-xlsx";
+import { ValidationError } from "../errors";
 
 export async function loadLookups(db: Db | Tx): Promise<Lookups> {
   const items = await db.listItem.findMany({ where: { active: true, mergedIntoId: null }, select: { id: true, type: true, label: true }, orderBy: { sortOrder: "asc" } });
@@ -79,18 +80,21 @@ function crossRowChecks(rows: PreparedRow[]) {
 export async function prepareImport(
   db: Db,
   file: { name: string; data: ArrayBuffer | Buffer },
-  opts: { sheetName?: string; columnMap?: ColumnMap; now?: Date; agesAsOf?: Date } = {},
+  opts: { sheetName?: string; headerRow?: number; columnMap?: ColumnMap; now?: Date; agesAsOf?: Date } = {},
 ): Promise<PreparedImport> {
   const { sheets, modified } = await readWorkbook(file.data);
   const now = opts.now ?? new Date();
   // Ages ("12yrs") are counted back from when the register was last saved.
   const agesAsOf = opts.agesAsOf ?? (modified && modified < now ? modified : now);
-  const picked = pickSheet(sheets, opts.sheetName);
-  if (!picked) throw new Error("Could not find a header row with Member ID / Last Name / First Name columns.");
-  const { sheet, det } = picked;
-  const columnMap = opts.columnMap ?? det!.map;
+  const sheet = opts.sheetName ? sheets.find((s) => s.name === opts.sheetName) : pickSheet(sheets)?.sheet;
+  if (!sheet) throw new ValidationError(opts.sheetName ? `Sheet “${opts.sheetName}” not found.` : "Could not find a header row with Member ID / Last Name / First Name columns.");
+  const det = detectColumns(sheet);
+  const headerRow = opts.headerRow ?? det?.headerRow;
+  if (!headerRow) throw new ValidationError("Could not find the header row. Choose it on the mapping step.");
+  const columnMap = opts.columnMap ?? det?.map ?? {};
+  if (columnMap.lastName === undefined && columnMap.firstName === undefined) throw new ValidationError("Map at least the Last name or First name column.");
   const lookups = await loadLookups(db);
-  const rows = extractRecords(sheet, det!.headerRow, columnMap).map(({ rowNumber, raw }) => ({
+  const rows = extractRecords(sheet, headerRow, columnMap).map(({ rowNumber, raw }) => ({
     rowNumber,
     raw,
     normalized: normalizeRow(raw, lookups, now, agesAsOf),
@@ -101,9 +105,9 @@ export async function prepareImport(
     fileName: file.name,
     fileHash: hashFile(file.data),
     sheetName: sheet.name,
-    headerRow: det!.headerRow,
+    headerRow,
     columnMap,
-    headers: det!.headers,
+    headers: headersOf(sheet, headerRow),
     rows,
     agesAsOf: agesAsOf.toISOString().slice(0, 10),
     summary: {
@@ -114,6 +118,61 @@ export async function prepareImport(
       skipped: rows.filter((r) => r.normalized.skip).length,
     },
   };
+}
+
+function headersOf(sheet: SheetRows, headerRow: number): Record<number, string> {
+  const row = sheet.rows.find((r) => r.rowNumber === headerRow);
+  const out: Record<number, string> = {};
+  row?.cells.forEach((c, i) => {
+    if (c !== null && c !== undefined && String(c).trim()) out[i] = String(c).trim();
+  });
+  return out;
+}
+
+/** Sheets in a workbook with their detected header row and column mapping (wizard step 2). */
+export async function describeWorkbook(data: ArrayBuffer | Buffer) {
+  const { sheets, modified } = await readWorkbook(data);
+  return {
+    modified,
+    sheets: sheets.map((s) => {
+      const det = detectColumns(s);
+      return {
+        name: s.name,
+        rowCount: s.rows.length,
+        headerRow: det?.headerRow ?? null,
+        detected: det?.map ?? {},
+        headers: det ? det.headers : {},
+        /** First rows, for choosing a header row by hand. */
+        preview: s.rows.slice(0, 8).map((r) => ({ rowNumber: r.rowNumber, cells: r.cells.slice(0, 20).map((c) => (c instanceof Date ? c.toISOString().slice(0, 10) : c === null || c === undefined ? "" : String(c).slice(0, 40))) })),
+      };
+    }),
+  };
+}
+
+export type RowPreview = { rowNumber: number; action: "CREATE" | "UPDATE" | "UNCHANGED" | "SKIP" | "ERROR"; changes: string[] };
+
+/**
+ * Dry run: what committing would do to each row, without writing anything.
+ * Mirrors commitRow's matching and fill-gaps rules.
+ */
+export async function previewActions(db: Db, prepared: PreparedImport): Promise<RowPreview[]> {
+  const nos = prepared.rows.map((r) => r.normalized.memberNo).filter((n): n is number => n !== null);
+  const existing = new Map(
+    (await db.member.findMany({ where: { memberNo: { in: nos } }, include: { ministries: true } })).map((m) => [m.memberNo, m]),
+  );
+  return prepared.rows.map((row) => {
+    const n = row.normalized;
+    if (n.skip) return { rowNumber: row.rowNumber, action: "SKIP", changes: [] };
+    if (n.issues.some((i) => i.severity === "error" && i.field === "memberId")) return { rowNumber: row.rowNumber, action: "ERROR", changes: [] };
+    const m = n.memberNo !== null ? existing.get(n.memberNo) : undefined;
+    if (!m) return { rowNumber: row.rowNumber, action: "CREATE", changes: [] };
+    if (m.purgedAt || m.mergedIntoId) return { rowNumber: row.rowNumber, action: "SKIP", changes: [] };
+    const { data } = gapFill(m as unknown as Record<string, unknown>, toDbColumns(n.columns));
+    const have = new Set(m.ministries.map((l) => `${l.ministryId}:${l.roleId}`));
+    const links = n.ministries.filter((l) => !have.has(`${l.ministryId}:${l.roleId}`)).length;
+    const changes = [...Object.keys(data).filter((k) => !k.endsWith("Raw")), ...(links ? ["ministry"] : [])];
+    return { rowNumber: row.rowNumber, action: changes.length ? "UPDATE" : "UNCHANGED", changes };
+  });
 }
 
 /** Which Member column a raw value belongs to (to skip raw values for fields already filled). */
@@ -163,18 +222,21 @@ export type CommitTotals = { created: number; updated: number; unchanged: number
  * rows without an ID, on the same file + row number from an earlier run), and
  * existing records only have empty fields filled.
  */
-export async function commitImport(db: Db, actor: Actor, prepared: PreparedImport, opts: { chunkSize?: number } = {}) {
-  const batch = await db.importBatch.create({
-    data: {
-      fileName: prepared.fileName,
-      fileHash: prepared.fileHash,
-      sheetName: prepared.sheetName,
-      headerRow: prepared.headerRow,
-      columnMap: prepared.columnMap as Prisma.InputJsonValue,
-      status: "VALIDATED",
-      createdById: actor.userId,
-    },
-  });
+export async function commitImport(db: Db, actor: Actor, prepared: PreparedImport, opts: { chunkSize?: number; batchId?: string } = {}) {
+  const batchData = {
+    fileName: prepared.fileName,
+    fileHash: prepared.fileHash,
+    sheetName: prepared.sheetName,
+    headerRow: prepared.headerRow,
+    columnMap: prepared.columnMap as Prisma.InputJsonValue,
+    status: "VALIDATED" as const,
+  };
+  const batch = opts.batchId
+    ? await db.importBatch.update({ where: { id: opts.batchId }, data: batchData })
+    : await db.importBatch.create({ data: { ...batchData, createdById: actor.userId } });
+  if (opts.batchId && (await db.importRow.count({ where: { batchId: batch.id } })) > 0) {
+    throw new ValidationError("This import was already committed.");
+  }
   const totals: CommitTotals = { created: 0, updated: 0, unchanged: 0, skipped: 0, errors: 0 };
   const rules = await getCompletenessRules(db);
   const chunkSize = opts.chunkSize ?? 50;

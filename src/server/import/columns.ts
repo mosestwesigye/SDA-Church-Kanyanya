@@ -31,7 +31,7 @@ const HEADER_ALIASES: Record<string, ImportField> = {
   nextofkin: "nextOfKin", nok: "nextOfKin",
   profession: "profession", occupation: "profession",
   ministry: "ministry", department: "ministry",
-  role: "role",
+  role: "role", position: "role", office: "role", ministryrole: "role",
 };
 
 const norm = (s: string) => s.toLowerCase().replace(/[^a-z]/g, "");
