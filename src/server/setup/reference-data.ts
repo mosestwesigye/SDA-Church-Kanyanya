@@ -106,6 +106,8 @@ export const DEFAULT_SETTINGS: Record<string, unknown> = {
   "privacy.consentVersion": "2026-1",
   "retention.purgeAfterDays": 365,
   "merge.undoDays": 30,
+  // Whether a photo counts toward profile completeness (Admin → Data rules).
+  "completeness.photoRequired": true,
 };
 
 /** Idempotently create roles, permission matrix, lists, mappings and settings. */

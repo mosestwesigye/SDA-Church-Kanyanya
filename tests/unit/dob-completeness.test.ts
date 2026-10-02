@@ -60,6 +60,17 @@ describe("computeCompleteness", () => {
     expect(computeCompleteness({ ...full, dobPrecision: "YEAR" }).missing).toEqual(["dob"]);
   });
 
+  it("counts the photo only when the rule says so", () => {
+    const noPhoto = {
+      lastName: "A", firstName: "B", gender: "FEMALE", dobPrecision: "FULL", yearJoined: 1996,
+      zoneId: "z", phoneE164: "x", status: "ACTIVE", maritalStatus: "SINGLE", nextOfKinName: "C",
+      nextOfKinPhoneE164: "y", professionId: "p", ministryCount: 1,
+    };
+    expect(computeCompleteness(noPhoto, { photoRequired: true })).toEqual({ percent: 93, missing: ["photo"] });
+    expect(computeCompleteness(noPhoto, { photoRequired: false })).toEqual({ percent: 100, missing: [] });
+    expect(computeCompleteness({ lastName: "N", firstName: "G" }, { photoRequired: false }).percent).toBe(15);
+  });
+
   it("requires a spouse only when married", () => {
     const base = {
       lastName: "A", firstName: "B", gender: "FEMALE", dobPrecision: "FULL", yearJoined: 1996, photoKey: "p",

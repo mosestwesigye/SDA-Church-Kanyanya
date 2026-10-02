@@ -1,6 +1,7 @@
 /**
  * Profile completeness = filled required fields ÷ required fields.
  * Email is optional and never counts. Spouse only counts when married.
+ * Whether a photo counts is an admin setting (see CompletenessRules).
  * A year-only date of birth counts as missing "Full date of birth"
  * (matches the design's completeness card).
  */
@@ -46,14 +47,20 @@ export type RequiredField = keyof typeof REQUIRED_FIELD_LABELS;
 
 const filled = (v: unknown) => v !== null && v !== undefined && String(v).trim() !== "";
 
-export function computeCompleteness(m: CompletenessInput): { percent: number; missing: RequiredField[] } {
+/** Admin-configurable rules (stored in AppSetting, see server/settings/rules.ts). */
+export type CompletenessRules = { photoRequired: boolean };
+export const DEFAULT_COMPLETENESS_RULES: CompletenessRules = { photoRequired: true };
+
+export function computeCompleteness(
+  m: CompletenessInput,
+  rules: CompletenessRules = DEFAULT_COMPLETENESS_RULES,
+): { percent: number; missing: RequiredField[] } {
   const checks: [RequiredField, boolean][] = [
     ["lastName", filled(m.lastName)],
     ["firstName", filled(m.firstName)],
     ["gender", filled(m.gender)],
     ["dob", m.dobPrecision === "FULL"],
     ["yearJoined", filled(m.yearJoined)],
-    ["photo", filled(m.photoKey)],
     ["zone", filled(m.zoneId)],
     ["phone", filled(m.phoneE164)],
     ["status", filled(m.status)],
@@ -63,6 +70,7 @@ export function computeCompleteness(m: CompletenessInput): { percent: number; mi
     ["profession", filled(m.professionId)],
     ["ministry", (m.ministryCount ?? 0) > 0],
   ];
+  if (rules.photoRequired) checks.push(["photo", filled(m.photoKey)]);
   if (m.maritalStatus === "MARRIED") {
     checks.push(["spouse", filled(m.spouseMemberId) || filled(m.spouseName)]);
   }

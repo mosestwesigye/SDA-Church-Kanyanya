@@ -1,11 +1,12 @@
 import { z } from "zod";
 import type { AuditSource, Prisma } from "@/generated/prisma/client";
-import { computeCompleteness } from "@/lib/completeness";
+import { computeCompleteness, type CompletenessRules } from "@/lib/completeness";
 import { normalizeUgPhone } from "@/lib/phone";
 import { AuditWriter, type Actor } from "../audit/audit";
 import { assertCan, assertCanUpdateFields, canOnMember, type AuthContext } from "../authz/policy";
 import type { Db, DbOrTx, Tx } from "../db";
 import { ConflictError, ForbiddenError, NotFoundError, ValidationError } from "../errors";
+import { getCompletenessRules } from "../settings/rules";
 
 export function actorFrom(ctx: AuthContext): Actor {
   return { userId: ctx.userId, label: ctx.label, sessionId: ctx.sessionId, ipAddress: ctx.ipAddress };
@@ -105,17 +106,20 @@ export function patchToColumns(p: MemberPatch): Record<string, unknown> {
   return out;
 }
 
-const COMPLETENESS_SELECT = {
+export const COMPLETENESS_SELECT = {
   lastName: true, firstName: true, gender: true, dobPrecision: true, yearJoined: true,
   photoKey: true, zoneId: true, phoneE164: true, status: true, maritalStatus: true,
   spouseMemberId: true, spouseName: true, nextOfKinName: true, nextOfKinPhoneE164: true,
   professionId: true, _count: { select: { ministries: true } },
 } satisfies Prisma.MemberSelect;
 
-/** Recompute and store completeness for one member (call after any write). */
-export async function refreshCompleteness(tx: DbOrTx, memberId: string): Promise<{ percent: number; missing: string[] }> {
+/**
+ * Recompute and store completeness for one member (call after any write).
+ * Pass `rules` when refreshing many members to avoid re-reading settings.
+ */
+export async function refreshCompleteness(tx: DbOrTx, memberId: string, rules?: CompletenessRules): Promise<{ percent: number; missing: string[] }> {
   const m = await tx.member.findUniqueOrThrow({ where: { id: memberId }, select: COMPLETENESS_SELECT });
-  const res = computeCompleteness({ ...m, ministryCount: m._count.ministries });
+  const res = computeCompleteness({ ...m, ministryCount: m._count.ministries }, rules ?? (await getCompletenessRules(tx)));
   await tx.member.update({ where: { id: memberId }, data: { completeness: res.percent, missingFields: res.missing } });
   return res;
 }

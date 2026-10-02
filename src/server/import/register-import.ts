@@ -4,6 +4,8 @@ import { normalizeValue } from "@/lib/normalize";
 import { AuditWriter, type Actor } from "../audit/audit";
 import type { Db, Tx } from "../db";
 import { refreshCompleteness } from "../members/service";
+import { getCompletenessRules } from "../settings/rules";
+import type { CompletenessRules } from "@/lib/completeness";
 import { detectColumns, extractRecords, type ColumnMap, type RawRecord } from "./columns";
 import { normalizeRow, type Issue, type Lookups, type NormalizedRow } from "./normalize-row";
 import { readWorkbook, type SheetRows } from "./read-xlsx";
@@ -174,6 +176,7 @@ export async function commitImport(db: Db, actor: Actor, prepared: PreparedImpor
     },
   });
   const totals: CommitTotals = { created: 0, updated: 0, unchanged: 0, skipped: 0, errors: 0 };
+  const rules = await getCompletenessRules(db);
   const chunkSize = opts.chunkSize ?? 50;
 
   // Rows that carry a Member ID go first, so rows without one are issued
@@ -188,7 +191,7 @@ export async function commitImport(db: Db, actor: Actor, prepared: PreparedImpor
       async (tx) => {
         const audit = new AuditWriter(tx, actor, "IMPORT", batch.id);
         for (const row of chunk) {
-          const result = await commitRow(tx, audit, prepared, batch.id, row);
+          const result = await commitRow(tx, audit, prepared, batch.id, row, rules);
           totals[result]++;
         }
       },
@@ -202,7 +205,14 @@ export async function commitImport(db: Db, actor: Actor, prepared: PreparedImpor
   });
 }
 
-async function commitRow(tx: Tx, audit: AuditWriter, prepared: PreparedImport, batchId: string, row: PreparedRow): Promise<keyof CommitTotals> {
+async function commitRow(
+  tx: Tx,
+  audit: AuditWriter,
+  prepared: PreparedImport,
+  batchId: string,
+  row: PreparedRow,
+  rules: CompletenessRules,
+): Promise<keyof CommitTotals> {
   const n = row.normalized;
   const where = `${prepared.fileName}, row ${row.rowNumber}`;
   const issues = [...n.issues];
@@ -267,7 +277,7 @@ async function commitRow(tx: Tx, audit: AuditWriter, prepared: PreparedImport, b
         skipDuplicates: true,
       });
     }
-    await refreshCompleteness(tx, m.id);
+    await refreshCompleteness(tx, m.id, rules);
     await audit.log({ action: "CREATE", entity: "Member", entityId: m.id, memberId: m.id, newValue: { memberId: m.memberId, ...n.columns }, note: where });
     await record("CREATE", m.id);
     return "created";
@@ -311,7 +321,7 @@ async function commitRow(tx: Tx, audit: AuditWriter, prepared: PreparedImport, b
     const link = await tx.memberMinistry.create({ data: { memberId: existing.id, ...l }, include: { ministry: true, role: true } });
     await audit.log({ action: "CREATE", entity: "MemberMinistry", entityId: link.id, memberId: existing.id, field: "ministry", newValue: `${link.ministry.label} · ${link.role.label}`, note: where });
   }
-  await refreshCompleteness(tx, existing.id);
+  await refreshCompleteness(tx, existing.id, rules);
   await record("UPDATE", existing.id);
   return "updated";
 }

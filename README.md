@@ -53,6 +53,10 @@ pnpm typecheck && pnpm lint
 2. Set `BETTER_AUTH_SECRET`, `BETTER_AUTH_URL` (the production URL), `SESSION_IDLE_MINUTES`, `RESEND_API_KEY`, `EMAIL_FROM`.
 3. Run `pnpm db:migrate` and `pnpm db:bootstrap` once against the production database (from your machine with `DATABASE_URL` pointing at it), then import the register.
 
+## Data rules
+
+- **Photo in completeness**: Admin → Data rules → “Photo counts toward profile completeness” (setting `completeness.photoRequired`, default on, matching the design). Changing it is audited and immediately rescores every member.
+
 ## Security and privacy model
 
 - **Permissions**: role × resource × action matrix in the database (`Permission`), with scope `ALL`, `MINISTRY` or `SELF`. Defaults: `src/server/authz/defaults.ts`.
