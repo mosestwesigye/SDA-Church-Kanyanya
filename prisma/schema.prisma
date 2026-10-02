@@ -351,9 +351,9 @@ model ListItem {
 model Member {
   id       String @id @default(cuid())
   /// Permanent, never reused. Assigned from member_no_seq unless imported.
-  memberNo Int    @unique @default(dbgenerated("nextval('member_no_seq')"))
+  memberNo Int    @unique @default(autoincrement())
   /// "SDAK/M0001" — set by trigger from memberNo, immutable.
-  memberId String @unique @default(dbgenerated("''"))
+  memberId String @unique @default("")
 
   lastName  String
   firstName String
@@ -413,6 +413,7 @@ model Member {
   correctionRequests CorrectionRequest[]
   rawValues         RawValue[]
   importRows        ImportRow[]
+  reviewFlags       ReviewFlag[]
 
   @@index([lastName, firstName])
   @@index([status])
@@ -420,6 +421,8 @@ model Member {
   @@index([completeness])
   @@index([phoneE164])
   @@index([deletedAt])
+  // Trigram index for ID search (pg_trgm). Declared so Prisma doesn't drop it.
+  @@index([memberId(ops: raw("gin_trgm_ops"))], type: Gin, map: "member_memberid_trgm")
 }
 
 model MemberMinistry {
@@ -628,6 +631,21 @@ model Merge {
 
   @@index([survivorId])
   @@index([retiredId])
+}
+
+/// Manual "send to clean-up queue" flags from the directory's bulk actions.
+model ReviewFlag {
+  id           String    @id @default(cuid())
+  memberId     String
+  member       Member    @relation(fields: [memberId], references: [id], onDelete: Cascade)
+  reason       String
+  flaggedById  String
+  createdAt    DateTime  @default(now())
+  resolvedAt   DateTime?
+  resolvedById String?
+
+  @@index([resolvedAt, createdAt])
+  @@index([memberId])
 }
 
 /// "Not a duplicate" decisions so pairs don't reappear in the queue.

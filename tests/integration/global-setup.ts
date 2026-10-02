@@ -15,6 +15,11 @@ export default async function setup() {
   await client.connect();
   await client.query("DROP SCHEMA IF EXISTS public CASCADE; CREATE SCHEMA public; DROP SEQUENCE IF EXISTS member_no_seq;");
   await client.end();
-  execSync("pnpm exec prisma migrate deploy", { env: { ...process.env, DATABASE_URL: url }, stdio: "pipe" });
+  const env = { ...process.env, DATABASE_URL: url };
+  execSync("pnpm exec prisma migrate deploy", { env, stdio: "pipe" });
+  // Guard: the migrated database must match schema.prisma exactly. Prisma's
+  // diff once tried to drop member_no_seq; drift like that must fail CI.
+  const drift = execSync("pnpm exec prisma migrate diff --from-config-datasource --to-schema prisma/schema.prisma --script", { env, encoding: "utf8" });
+  if (!/empty migration/.test(drift)) throw new Error(`Schema drift between migrations and schema.prisma:\n${drift}`);
   process.env.DATABASE_URL = url;
 }
