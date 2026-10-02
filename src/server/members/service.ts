@@ -3,7 +3,7 @@ import type { AuditSource, Prisma } from "@/generated/prisma/client";
 import { computeCompleteness, type CompletenessRules } from "@/lib/completeness";
 import { normalizeUgPhone } from "@/lib/phone";
 import { AuditWriter, type Actor } from "../audit/audit";
-import { assertCan, assertCanUpdateFields, canOnMember, type AuthContext } from "../authz/policy";
+import { assertCan, assertCanUpdateFields, can, canOnMember, memberScopeWhere, type AuthContext } from "../authz/policy";
 import type { Db, DbOrTx, Tx } from "../db";
 import { ConflictError, ForbiddenError, NotFoundError, ValidationError } from "../errors";
 import { getCompletenessRules } from "../settings/rules";
@@ -235,17 +235,53 @@ export async function addMinistry(db: Db, ctx: AuthContext, memberId: string, mi
     const m = await loadForWrite(tx, memberId);
     const canManage = canOnMember(ctx, "member", "update", m) || canOnMember(ctx, "ministry", "manage", { id: m.id, ministries: [{ ministryId }] });
     if (!canManage) throw new ForbiddenError();
-    const link = await tx.memberMinistry.upsert({
+    const existing = await tx.memberMinistry.findUnique({
       where: { memberId_ministryId_roleId: { memberId, ministryId, roleId } },
-      create: { memberId, ministryId, roleId },
-      update: {},
       include: { ministry: true, role: true },
     });
+    if (existing) return existing;
+    const link = await tx.memberMinistry.create({ data: { memberId, ministryId, roleId }, include: { ministry: true, role: true } });
     await new AuditWriter(tx, actorFrom(ctx), source).log({
       action: "CREATE", entity: "MemberMinistry", entityId: link.id, memberId, field: "ministry",
       newValue: `${link.ministry.label} · ${link.role.label}`,
     });
     await refreshCompleteness(tx, memberId);
     return link;
+  });
+}
+
+/** Remove a ministry/role link (audited, completeness refreshed). */
+export async function removeMinistry(db: Db, ctx: AuthContext, linkId: string) {
+  return db.$transaction(async (tx) => {
+    const link = await tx.memberMinistry.findUnique({ where: { id: linkId }, include: { ministry: true, role: true } });
+    if (!link) throw new NotFoundError("Ministry link not found.");
+    const m = await loadForWrite(tx, link.memberId);
+    const canManage = canOnMember(ctx, "member", "update", m) || canOnMember(ctx, "ministry", "manage", { id: m.id, ministries: [{ ministryId: link.ministryId }] });
+    if (!canManage) throw new ForbiddenError();
+    await tx.memberMinistry.delete({ where: { id: linkId } });
+    await new AuditWriter(tx, actorFrom(ctx), "UI").log({
+      action: "DELETE", entity: "MemberMinistry", entityId: link.id, memberId: link.memberId, field: "ministry",
+      oldValue: `${link.ministry.label} · ${link.role.label}`,
+    });
+    await refreshCompleteness(tx, link.memberId);
+  });
+}
+
+/** "Send to clean-up queue": flag members for manual review (audited). */
+export async function flagForReview(db: Db, ctx: AuthContext, memberIds: string[], reason: string) {
+  if (!can(ctx, "cleanup", "use")) throw new ForbiddenError();
+  const text = reason.trim() || "Sent from directory";
+  return db.$transaction(async (tx) => {
+    const members = await tx.member.findMany({
+      where: { AND: [memberScopeWhere(ctx) as Prisma.MemberWhereInput, { id: { in: memberIds }, purgedAt: null }] },
+      select: { id: true, reviewFlags: { where: { resolvedAt: null }, select: { id: true } } },
+    });
+    const fresh = members.filter((m) => m.reviewFlags.length === 0);
+    if (fresh.length === 0) return 0;
+    await tx.reviewFlag.createMany({ data: fresh.map((m) => ({ memberId: m.id, reason: text, flaggedById: ctx.userId })) });
+    await new AuditWriter(tx, actorFrom(ctx), "UI").log(
+      ...fresh.map((m) => ({ action: "CREATE" as const, entity: "ReviewFlag", memberId: m.id, newValue: text })),
+    );
+    return fresh.length;
   });
 }

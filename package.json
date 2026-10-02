@@ -22,6 +22,7 @@
     "@node-rs/argon2": "^2.2.1",
     "@prisma/adapter-pg": "7.10.0",
     "@prisma/client": "7.10.0",
+    "@vercel/blob": "^2.8.0",
     "better-auth": "^1.7.7",
     "exceljs": "^4.4.0",
     "libphonenumber-js": "^1.13.14",

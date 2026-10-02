@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
-import { headers } from "next/headers";
+import { cookies, headers } from "next/headers";
+import { ThemeToggle } from "@/components/shell/theme-toggle";
 import Link from "next/link";
 import { PageHeader, TopBar } from "@/components/shell/topbar";
 import { ROLE_LABELS } from "@/server/authz/catalog";
@@ -20,6 +21,8 @@ function device(ua: string | null | undefined) {
 export default async function AccountPage() {
   const ctx = await requireContext();
   const sessions = await auth.api.listSessions({ headers: await headers() });
+  const themeCookie = (await cookies()).get("theme")?.value;
+  const theme = themeCookie === "light" || themeCookie === "dark" ? themeCookie : "system";
   const fmt = (d: Date) => new Date(d).toLocaleString("en-GB", { dateStyle: "medium", timeStyle: "short", timeZone: "Africa/Kampala" });
 
   return (
@@ -31,6 +34,11 @@ export default async function AccountPage() {
             <button className="btn btn-secondary">Sign out</button>
           </form>
         </PageHeader>
+
+        <section className="card p-5">
+          <h2 className="text-[17px] font-semibold mb-3">Appearance</h2>
+          <ThemeToggle current={theme} />
+        </section>
 
         <section className="card p-5">
           <h2 className="text-[17px] font-semibold">Two-step verification</h2>

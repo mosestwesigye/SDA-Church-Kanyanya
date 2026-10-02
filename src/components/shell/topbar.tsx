@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { OnlineStatus } from "./online-status";
 
 /** Desktop top bar from the design: member search, sync state, primary action. */
 export function TopBar({ showAdd = false }: { showAdd?: boolean }) {
@@ -14,12 +15,9 @@ export function TopBar({ showAdd = false }: { showAdd?: boolean }) {
           className="w-full h-10 rounded-[6px] border border-line bg-bg px-3 text-[14px] placeholder:text-ink-3"
         />
       </form>
-      <span className="ml-auto hidden sm:flex items-center gap-2 text-[13px] text-ink-3">
-        <span aria-hidden className="size-2 rounded-full bg-ok" />
-        Online
-      </span>
+      <OnlineStatus />
       {showAdd && (
-        <Link href="/members/new" className="btn btn-primary">
+        <Link href="/members/new" className="btn btn-primary hidden md:inline-flex">
           Add member
         </Link>
       )}

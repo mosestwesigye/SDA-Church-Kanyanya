@@ -107,6 +107,7 @@ export function memberSelect(ctx: AuthContext): Record<string, unknown> {
       if (f === "ministries") {
         select.ministries = {
           select: {
+            id: true,
             ministryId: true,
             roleId: true,
             ministry: { select: { id: true, label: true } },
