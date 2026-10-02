@@ -1,0 +1,737 @@
+// SDAK Church Manager — database schema.
+// Raw SQL that Prisma cannot express (sequences, triggers, pg_trgm indexes)
+// lives in prisma/migrations/*/migration.sql alongside the generated DDL.
+
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// ───────────────────────────── Enums ─────────────────────────────
+
+enum Gender {
+  MALE
+  FEMALE
+}
+
+enum DobPrecision {
+  FULL
+  YEAR
+  UNKNOWN
+}
+
+enum MembershipStatus {
+  ACTIVE
+  IRREGULAR
+  SELF_TRANSFERRED
+  UNDER_DISCIPLINE
+  DECEASED
+  LEFT_THE_FAITH
+}
+
+enum MaritalStatus {
+  SINGLE
+  MARRIED
+  SEPARATED
+  COHABITING
+  WIDOWED
+}
+
+enum ListType {
+  ZONE
+  MINISTRY
+  MINISTRY_ROLE
+  PROFESSION
+}
+
+enum PermissionScope {
+  ALL
+  MINISTRY
+  SELF
+}
+
+enum AuditSource {
+  UI
+  IMPORT
+  SELF_SERVICE
+  MERGE
+  WORKFLOW
+  SYSTEM
+}
+
+enum AuditAction {
+  CREATE
+  UPDATE
+  DELETE
+  RESTORE
+  PURGE
+  MERGE
+  UNMERGE
+  APPROVE
+  REJECT
+  LOGIN
+  LOGIN_FAILED
+  LOGOUT
+  EXPORT
+  SECURITY
+}
+
+enum RequestState {
+  PENDING
+  APPROVED
+  REJECTED
+  CANCELLED
+}
+
+enum StatusChangeType {
+  TRANSFER_IN
+  TRANSFER_OUT
+  DEATH
+  DISCIPLINE
+  RESTORATION
+  STATUS_UPDATE
+}
+
+enum TransferDirection {
+  IN
+  OUT
+}
+
+enum TransferStage {
+  REQUESTED
+  LETTER_SENT
+  LETTER_RECEIVED
+  BOARD_APPROVED
+  COMPLETED
+  CANCELLED
+}
+
+enum MembershipEventType {
+  JOINED
+  BAPTISM
+  PROFESSION_OF_FAITH
+  TRANSFER_IN
+  TRANSFER_OUT
+  STATUS_CHANGE
+  DEATH
+  DISCIPLINE
+  RESTORATION
+  MERGE
+  NOTE
+}
+
+enum HouseholdRelation {
+  HEAD
+  SPOUSE
+  CHILD
+  DEPENDANT
+  OTHER
+}
+
+enum DocumentKind {
+  PHOTO
+  CONSENT_FORM
+  TRANSFER_LETTER
+  DEATH_CERTIFICATE
+  BOARD_MINUTE
+  OTHER
+}
+
+enum ConsentMethod {
+  PAPER_FORM
+  SELF_SERVICE
+  VERBAL_RECORDED
+}
+
+enum RawValueField {
+  GENDER
+  DOB
+  YEAR_JOINED
+  ZONE
+  PHONE
+  EMAIL
+  STATUS
+  MARITAL
+  SPOUSE
+  NEXT_OF_KIN
+  PROFESSION
+  MINISTRY
+  MINISTRY_ROLE
+}
+
+enum ImportBatchStatus {
+  UPLOADED
+  VALIDATED
+  COMMITTED
+  FAILED
+}
+
+enum ImportRowAction {
+  CREATE
+  UPDATE
+  UNCHANGED
+  SKIP
+  ERROR
+}
+
+// ─────────────────────── Identity & access ───────────────────────
+// User / Session / Account / Verification / TwoFactor / RateLimit follow the
+// field names Better Auth expects.
+
+model User {
+  id                  String    @id @default(cuid())
+  name                String
+  email               String    @unique
+  emailVerified       Boolean   @default(false)
+  image               String?
+  phoneNumber         String?   @unique
+  phoneNumberVerified Boolean?
+  twoFactorEnabled    Boolean?  @default(false)
+  active              Boolean   @default(true)
+  lastLoginAt         DateTime?
+  createdAt           DateTime  @default(now())
+  updatedAt           DateTime  @updatedAt
+
+  // Self-service link: the member record this login belongs to (if any).
+  memberId String? @unique
+  member   Member? @relation("UserMember", fields: [memberId], references: [id])
+
+  sessions       Session[]
+  accounts       Account[]
+  twoFactors     TwoFactor[]
+  roles          UserRole[]
+  ministryScopes UserMinistryScope[]
+  savedViews     SavedView[]
+}
+
+model Session {
+  id        String   @id @default(cuid())
+  expiresAt DateTime
+  token     String   @unique
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  ipAddress String?
+  userAgent String?
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+model Account {
+  id                    String    @id @default(cuid())
+  accountId             String
+  providerId            String
+  userId                String
+  user                  User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  accessToken           String?
+  refreshToken          String?
+  idToken               String?
+  accessTokenExpiresAt  DateTime?
+  refreshTokenExpiresAt DateTime?
+  scope                 String?
+  password              String?
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
+
+  @@index([userId])
+}
+
+model Verification {
+  id         String   @id @default(cuid())
+  identifier String
+  value      String
+  expiresAt  DateTime
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@index([identifier])
+}
+
+model TwoFactor {
+  id                      String    @id @default(cuid())
+  secret                  String
+  backupCodes             String
+  userId                  String
+  user                    User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  verified                Boolean?  @default(true)
+  failedVerificationCount Int?      @default(0)
+  lockedUntil             DateTime?
+
+  @@index([userId])
+  @@index([secret])
+}
+
+model RateLimit {
+  id          String @id @default(cuid())
+  key         String @unique
+  count       Int
+  lastRequest BigInt
+}
+
+model Role {
+  id          String       @id @default(cuid())
+  key         String       @unique // SYSTEM_ADMIN, CHURCH_CLERK, …
+  name        String
+  description String?
+  isSystem    Boolean      @default(true)
+  require2fa  Boolean      @default(false)
+  createdAt   DateTime     @default(now())
+  permissions Permission[]
+  users       UserRole[]
+}
+
+/// One row per allowed (role, resource, action). Absence = denied.
+model Permission {
+  id       String          @id @default(cuid())
+  roleId   String
+  role     Role            @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  resource String
+  action   String
+  scope    PermissionScope @default(ALL)
+
+  @@unique([roleId, resource, action])
+}
+
+model UserRole {
+  userId String
+  roleId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  role   Role   @relation(fields: [roleId], references: [id], onDelete: Cascade)
+
+  @@id([userId, roleId])
+}
+
+/// Ministries a Ministry Head may see/manage.
+model UserMinistryScope {
+  userId     String
+  ministryId String
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  ministry   ListItem @relation(fields: [ministryId], references: [id])
+
+  @@id([userId, ministryId])
+}
+
+model AppSetting {
+  key       String   @id
+  value     Json
+  updatedAt DateTime @updatedAt
+}
+
+// ─────────────────────── Controlled lists ───────────────────────
+
+model ListItem {
+  id           String     @id @default(cuid())
+  type         ListType
+  label        String
+  sortOrder    Int        @default(0)
+  active       Boolean    @default(true)
+  mergedIntoId String?
+  mergedInto   ListItem?  @relation("ListMerge", fields: [mergedIntoId], references: [id])
+  mergedFrom   ListItem[] @relation("ListMerge")
+  createdAt    DateTime   @default(now())
+
+  zoneMembers       Member[]            @relation("MemberZone")
+  professionMembers Member[]            @relation("MemberProfession")
+  ministryLinks     MemberMinistry[]    @relation("MinistryLink")
+  roleLinks         MemberMinistry[]    @relation("RoleLink")
+  scopes            UserMinistryScope[]
+  valueMappings     ValueMapping[]
+
+  @@unique([type, label])
+  @@index([type, active, sortOrder])
+}
+
+// ─────────────────────────── Members ───────────────────────────
+
+model Member {
+  id       String @id @default(cuid())
+  /// Permanent, never reused. Assigned from member_no_seq unless imported.
+  memberNo Int    @unique @default(dbgenerated("nextval('member_no_seq')"))
+  /// "SDAK/M0001" — set by trigger from memberNo, immutable.
+  memberId String @unique @default(dbgenerated("''"))
+
+  lastName  String
+  firstName String
+  gender    Gender?
+  dobDate   DateTime?    @db.Date
+  dobYear   Int?
+  dobPrecision DobPrecision @default(UNKNOWN)
+  yearJoined Int?
+  photoKey   String?
+
+  zoneId String?
+  zone   ListItem? @relation("MemberZone", fields: [zoneId], references: [id])
+
+  phoneRaw   String?
+  phoneE164  String?
+  email      String?
+
+  status        MembershipStatus?
+  maritalStatus MaritalStatus?
+  spouseMemberId String?
+  spouse         Member?  @relation("Spouse", fields: [spouseMemberId], references: [id])
+  spouseOf       Member[] @relation("Spouse")
+  spouseName     String?
+
+  nextOfKinName      String?
+  nextOfKinPhoneRaw  String?
+  nextOfKinPhoneE164 String?
+
+  professionId String?
+  profession   ListItem? @relation("MemberProfession", fields: [professionId], references: [id])
+
+  /// 0–100, recomputed on every write.
+  completeness  Int      @default(0)
+  missingFields String[] @default([])
+
+  version   Int      @default(1)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  deletedAt   DateTime?
+  deletedById String?
+  /// Set when this record was merged into another and its ID retired.
+  mergedIntoId String?
+  mergedInto   Member?  @relation("MemberMerge", fields: [mergedIntoId], references: [id])
+  mergedFrom   Member[] @relation("MemberMerge")
+  /// Set on purge: PII wiped, row kept as a tombstone so the ID is never reused.
+  purgedAt DateTime?
+
+  user              User?               @relation("UserMember")
+  ministries        MemberMinistry[]
+  households        HouseholdMember[]
+  documents         Document[]
+  consents          Consent[]
+  events            MembershipEvent[]
+  statusRequests    StatusChangeRequest[]
+  transfers         Transfer[]
+  correctionRequests CorrectionRequest[]
+  rawValues         RawValue[]
+  importRows        ImportRow[]
+
+  @@index([lastName, firstName])
+  @@index([status])
+  @@index([zoneId])
+  @@index([completeness])
+  @@index([phoneE164])
+  @@index([deletedAt])
+}
+
+model MemberMinistry {
+  id         String    @id @default(cuid())
+  memberId   String
+  member     Member    @relation(fields: [memberId], references: [id], onDelete: Cascade)
+  ministryId String
+  ministry   ListItem  @relation("MinistryLink", fields: [ministryId], references: [id])
+  roleId     String
+  role       ListItem  @relation("RoleLink", fields: [roleId], references: [id])
+  since      DateTime? @db.Date
+  createdAt  DateTime  @default(now())
+
+  @@unique([memberId, ministryId, roleId])
+  @@index([ministryId])
+}
+
+/// Original register values that could not be mapped to a controlled list
+/// or parsed. Feeds the "Non-standard values" and "Invalid phone" queues.
+model RawValue {
+  id           String        @id @default(cuid())
+  memberId     String
+  member       Member        @relation(fields: [memberId], references: [id], onDelete: Cascade)
+  field        RawValueField
+  rawValue     String
+  /// Lower-cased, punctuation-stripped form used for grouping.
+  normalized   String
+  importRowId  String?
+  resolvedAt   DateTime?
+  resolvedById String?
+  createdAt    DateTime      @default(now())
+
+  @@unique([memberId, field, rawValue])
+  @@index([field, normalized])
+  @@index([resolvedAt])
+}
+
+/// Bulk mapping decisions: raw value → canonical list item (or blank).
+model ValueMapping {
+  id          String        @id @default(cuid())
+  field       RawValueField
+  normalized  String
+  listItemId  String?
+  listItem    ListItem?     @relation(fields: [listItemId], references: [id])
+  /// When true the raw value means "not recorded" (e.g. "Nil", "N/A").
+  meansBlank  Boolean       @default(false)
+  createdById String?
+  createdAt   DateTime      @default(now())
+
+  @@unique([field, normalized])
+}
+
+model Household {
+  id        String            @id @default(cuid())
+  name      String
+  createdAt DateTime          @default(now())
+  updatedAt DateTime          @updatedAt
+  members   HouseholdMember[]
+}
+
+model HouseholdMember {
+  householdId String
+  memberId    String
+  relation    HouseholdRelation
+  household   Household         @relation(fields: [householdId], references: [id], onDelete: Cascade)
+  member      Member            @relation(fields: [memberId], references: [id], onDelete: Cascade)
+
+  @@id([householdId, memberId])
+  @@index([memberId])
+}
+
+model Document {
+  id           String       @id @default(cuid())
+  memberId     String?
+  member       Member?      @relation(fields: [memberId], references: [id])
+  kind         DocumentKind
+  fileName     String
+  storageKey   String
+  mimeType     String
+  sizeBytes    Int
+  uploadedById String?
+  createdAt    DateTime     @default(now())
+  deletedAt    DateTime?
+
+  consents       Consent[]
+  statusRequests StatusChangeRequest[]
+
+  @@index([memberId])
+}
+
+/// Consent under the Uganda Data Protection and Privacy Act, 2019.
+model Consent {
+  id           String        @id @default(cuid())
+  memberId     String
+  member       Member        @relation(fields: [memberId], references: [id], onDelete: Cascade)
+  consentedAt  DateTime
+  version      String
+  method       ConsentMethod
+  documentId   String?
+  document     Document?     @relation(fields: [documentId], references: [id])
+  recordedById String?
+  withdrawnAt  DateTime?
+  createdAt    DateTime      @default(now())
+
+  @@index([memberId])
+}
+
+// ───────────────────────── Workflows ─────────────────────────
+
+model StatusChangeRequest {
+  id            String            @id @default(cuid())
+  memberId      String
+  member        Member            @relation(fields: [memberId], references: [id])
+  type          StatusChangeType
+  fromStatus    MembershipStatus?
+  toStatus      MembershipStatus
+  reason        String
+  effectiveDate DateTime          @db.Date
+  documentId    String?
+  document      Document?         @relation(fields: [documentId], references: [id])
+  requestedById String
+  requestedAt   DateTime          @default(now())
+  state         RequestState      @default(PENDING)
+  decidedById   String?
+  decidedAt     DateTime?
+  decisionNote  String?
+  transferId    String?           @unique
+  transfer      Transfer?         @relation(fields: [transferId], references: [id])
+
+  @@index([state, requestedAt])
+  @@index([memberId])
+}
+
+model Transfer {
+  id              String            @id @default(cuid())
+  memberId        String
+  member          Member            @relation(fields: [memberId], references: [id])
+  direction       TransferDirection
+  otherChurch     String
+  stage           TransferStage     @default(REQUESTED)
+  requestedAt     DateTime          @default(now())
+  letterSentAt    DateTime?
+  letterReceivedAt DateTime?
+  boardApprovedAt DateTime?
+  completedAt     DateTime?
+  notes           String?
+  createdById     String
+  statusRequest   StatusChangeRequest?
+
+  @@index([memberId])
+  @@index([stage])
+}
+
+/// Member history timeline. Discipline entries are field-restricted.
+model MembershipEvent {
+  id           String              @id @default(cuid())
+  memberId     String
+  member       Member              @relation(fields: [memberId], references: [id], onDelete: Cascade)
+  type         MembershipEventType
+  occurredOn   DateTime?           @db.Date
+  occurredYear Int?
+  title        String
+  detail       String?
+  fromStatus   MembershipStatus?
+  toStatus     MembershipStatus?
+  requestId    String?
+  approvedById String?
+  createdById  String?
+  createdAt    DateTime            @default(now())
+
+  @@index([memberId, occurredOn])
+}
+
+/// Self-service correction request: field → { from, to }.
+model CorrectionRequest {
+  id            String       @id @default(cuid())
+  memberId      String
+  member        Member       @relation(fields: [memberId], references: [id])
+  submittedById String
+  changes       Json
+  note          String?
+  state         RequestState @default(PENDING)
+  reviewedById  String?
+  reviewedAt    DateTime?
+  reviewNote    String?
+  createdAt     DateTime     @default(now())
+
+  @@index([state, createdAt])
+}
+
+// ───────────────────────── Clean-up ─────────────────────────
+
+model Merge {
+  id            String    @id @default(cuid())
+  survivorId    String
+  retiredId     String
+  /// field → "survivor" | "retired"
+  fieldChoices  Json
+  /// Full snapshots + relinked child rows, used to undo.
+  snapshot      Json
+  mergedById    String
+  mergedAt      DateTime  @default(now())
+  undoableUntil DateTime
+  undoneAt      DateTime?
+  undoneById    String?
+
+  @@index([survivorId])
+  @@index([retiredId])
+}
+
+/// "Not a duplicate" decisions so pairs don't reappear in the queue.
+model DuplicateDismissal {
+  memberAId     String
+  memberBId     String
+  dismissedById String
+  createdAt     DateTime @default(now())
+
+  @@id([memberAId, memberBId])
+}
+
+model CleanupTarget {
+  id            String   @id @default(cuid())
+  targetPercent Int
+  dueDate       DateTime @db.Date
+  createdById   String?
+  createdAt     DateTime @default(now())
+}
+
+model SavedView {
+  id        String   @id @default(cuid())
+  userId    String?
+  user      User?    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  name      String
+  filters   Json
+  columns   String[] @default([])
+  shared    Boolean  @default(false)
+  sortOrder Int      @default(0)
+  createdAt DateTime @default(now())
+}
+
+// ───────────────────────── Import ─────────────────────────
+
+model ImportBatch {
+  id          String            @id @default(cuid())
+  fileName    String
+  fileHash    String
+  sheetName   String
+  headerRow   Int
+  columnMap   Json
+  status      ImportBatchStatus @default(UPLOADED)
+  totals      Json?
+  createdById String?
+  createdAt   DateTime          @default(now())
+  committedAt DateTime?
+  rows        ImportRow[]
+
+  @@index([fileHash])
+}
+
+model ImportRow {
+  id        String          @id @default(cuid())
+  batchId   String
+  batch     ImportBatch     @relation(fields: [batchId], references: [id], onDelete: Cascade)
+  rowNumber Int
+  raw       Json
+  normalized Json?
+  issues    Json            @default("[]")
+  action    ImportRowAction?
+  memberId  String?
+  member    Member?         @relation(fields: [memberId], references: [id])
+
+  @@unique([batchId, rowNumber])
+  @@index([memberId])
+}
+
+// ───────────────────────── Audit & exports ─────────────────────────
+
+/// Append-only: UPDATE/DELETE/TRUNCATE are rejected by a database trigger.
+model AuditLog {
+  id            BigInt      @id @default(autoincrement())
+  at            DateTime    @default(now())
+  actorUserId   String?
+  actorLabel    String
+  source        AuditSource
+  action        AuditAction
+  entity        String
+  entityId      String?
+  memberId      String?
+  field         String?
+  oldValue      Json?
+  newValue      Json?
+  ipAddress     String?
+  sessionId     String?
+  correlationId String?
+  note          String?
+
+  @@index([memberId, at])
+  @@index([entity, entityId, at])
+  @@index([actorUserId, at])
+  @@index([at])
+}
+
+model ExportLog {
+  id          String   @id @default(cuid())
+  userId      String
+  kind        String
+  format      String
+  filters     Json
+  fields      String[]
+  rowCount    Int
+  noticeShown Boolean  @default(true)
+  createdAt   DateTime @default(now())
+
+  @@index([userId, createdAt])
+}

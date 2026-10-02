@@ -1,0 +1,202 @@
+@import "tailwindcss";
+
+/* ───────── Design tokens (design/SDAK Church Manager v2.dc.html) ───────── */
+:root {
+  --bg: #f4f6f6;
+  --surface: #ffffff;
+  --surface-2: #eef1f1;
+  --ink: #141c28;
+  --ink-2: #424c5c;
+  --ink-3: #5f6878;
+  --line: #dde3e4;
+  --primary: #1d5d6a;
+  --primary-ink: #ffffff;
+  --primary-soft: #e5eff0;
+  --accent: #31808d;
+  --sidebar: #174b55;
+  --sidebar-ink: #f4f7f7;
+  --sidebar-muted: #b3cdd1;
+  --sidebar-active: rgba(255, 255, 255, 0.12);
+  --error: #b23a2e;
+  --error-soft: #fbeceb;
+  --ok: #2f8a5b;
+
+  --status-active: #2f8a5b;
+  --status-irregular: #c08a1e;
+  --status-transferred: #4a78b5;
+  --status-discipline: #c0473a;
+  --status-deceased: #6b6f76;
+  --status-left: #8a5a9e;
+  --status-unknown: #a3aab3;
+
+  --radius: 6px;
+  --radius-card: 10px;
+  --font-sans: "Proxima Nova", var(--font-figtree), "Figtree", system-ui, sans-serif;
+  --font-mono: var(--font-plex-mono), "IBM Plex Mono", ui-monospace, monospace;
+  color-scheme: light;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #0c1416;
+    --surface: #131e21;
+    --surface-2: #1a282b;
+    --ink: #eceff3;
+    --ink-2: #c3cad3;
+    --ink-3: #9aa3ae;
+    --line: #27393d;
+    --primary: #7fc4ce;
+    --primary-ink: #0c1416;
+    --primary-soft: #183236;
+    --accent: #5fb0bc;
+    --sidebar: #0c1d21;
+    --error: #ec8174;
+    --error-soft: #3a1d1a;
+    color-scheme: dark;
+  }
+}
+
+:root[data-theme="dark"] {
+  --bg: #0c1416;
+  --surface: #131e21;
+  --surface-2: #1a282b;
+  --ink: #eceff3;
+  --ink-2: #c3cad3;
+  --ink-3: #9aa3ae;
+  --line: #27393d;
+  --primary: #7fc4ce;
+  --primary-ink: #0c1416;
+  --primary-soft: #183236;
+  --accent: #5fb0bc;
+  --sidebar: #0c1d21;
+  --error: #ec8174;
+  --error-soft: #3a1d1a;
+  color-scheme: dark;
+}
+
+@theme inline {
+  --color-bg: var(--bg);
+  --color-surface: var(--surface);
+  --color-surface-2: var(--surface-2);
+  --color-ink: var(--ink);
+  --color-ink-2: var(--ink-2);
+  --color-ink-3: var(--ink-3);
+  --color-line: var(--line);
+  --color-primary: var(--primary);
+  --color-primary-ink: var(--primary-ink);
+  --color-primary-soft: var(--primary-soft);
+  --color-accent: var(--accent);
+  --color-sidebar: var(--sidebar);
+  --color-sidebar-ink: var(--sidebar-ink);
+  --color-sidebar-muted: var(--sidebar-muted);
+  --color-error: var(--error);
+  --color-error-soft: var(--error-soft);
+  --color-ok: var(--ok);
+  --font-sans: var(--font-sans);
+  --font-mono: var(--font-mono);
+  --radius-btn: var(--radius);
+  --radius-card: var(--radius-card);
+}
+
+html,
+body {
+  background: var(--bg);
+  color: var(--ink);
+  font-family: var(--font-sans);
+}
+
+body {
+  font-size: 16px;
+  line-height: 1.4;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* ───────── Components shared across screens ───────── */
+@layer components {
+  .btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+    min-height: 40px;
+    padding: 0 16px;
+    border-radius: var(--radius);
+    font-size: 14px;
+    font-weight: 600;
+    border: 1px solid transparent;
+    transition: background-color 120ms, border-color 120ms;
+    cursor: pointer;
+  }
+  .btn:disabled {
+    opacity: 0.55;
+    cursor: not-allowed;
+  }
+  .btn-primary {
+    background: var(--primary);
+    color: var(--primary-ink);
+  }
+  .btn-primary:hover:not(:disabled) {
+    background: color-mix(in oklab, var(--primary) 88%, black);
+  }
+  .btn-secondary {
+    background: var(--surface);
+    color: var(--ink);
+    border-color: var(--line);
+  }
+  .btn-secondary:hover:not(:disabled) {
+    background: var(--surface-2);
+  }
+  .btn-danger {
+    background: var(--surface);
+    color: var(--error);
+    border-color: var(--line);
+  }
+  .card {
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: var(--radius-card);
+  }
+  .field-label {
+    display: block;
+    font-size: 13px;
+    color: var(--ink-2);
+    margin-bottom: 6px;
+  }
+  .input {
+    width: 100%;
+    min-height: 44px;
+    padding: 0 12px;
+    border-radius: var(--radius);
+    border: 1px solid var(--line);
+    background: var(--surface);
+    color: var(--ink);
+    font-size: 16px;
+  }
+  .input:focus-visible,
+  .btn:focus-visible,
+  a:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+  }
+  .input[aria-invalid="true"] {
+    border-color: var(--error);
+  }
+  .mono {
+    font-family: var(--font-mono);
+  }
+  .skeleton {
+    background: linear-gradient(90deg, var(--surface-2), var(--line), var(--surface-2));
+    background-size: 200% 100%;
+    animation: shimmer 1.2s infinite linear;
+    border-radius: 4px;
+  }
+}
+
+@keyframes shimmer {
+  from { background-position: 200% 0; }
+  to { background-position: -200% 0; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .skeleton { animation: none; }
+}

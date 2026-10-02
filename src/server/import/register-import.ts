@@ -1,0 +1,317 @@
+import { createHash } from "node:crypto";
+import type { Prisma, RawValueField } from "@/generated/prisma/client";
+import { normalizeValue } from "@/lib/normalize";
+import { AuditWriter, type Actor } from "../audit/audit";
+import type { Db, Tx } from "../db";
+import { refreshCompleteness } from "../members/service";
+import { detectColumns, extractRecords, type ColumnMap, type RawRecord } from "./columns";
+import { normalizeRow, type Issue, type Lookups, type NormalizedRow } from "./normalize-row";
+import { readWorkbook, type SheetRows } from "./read-xlsx";
+
+export async function loadLookups(db: Db | Tx): Promise<Lookups> {
+  const items = await db.listItem.findMany({ where: { active: true, mergedIntoId: null }, select: { id: true, type: true, label: true }, orderBy: { sortOrder: "asc" } });
+  const lists: Lookups["lists"] = { ZONE: [], MINISTRY: [], MINISTRY_ROLE: [], PROFESSION: [] };
+  for (const i of items) lists[i.type].push({ id: i.id, label: i.label });
+  const maps = await db.valueMapping.findMany();
+  const mappings = new Map<string, string | null>(maps.map((m) => [`${m.field}:${m.normalized}`, m.meansBlank ? null : m.listItemId]));
+  return { lists, mappings };
+}
+
+export type PreparedRow = { rowNumber: number; raw: RawRecord; normalized: NormalizedRow };
+
+export type PreparedImport = {
+  fileName: string;
+  fileHash: string;
+  sheetName: string;
+  headerRow: number;
+  columnMap: ColumnMap;
+  headers: Record<number, string>;
+  rows: PreparedRow[];
+  agesAsOf: string;
+  summary: { rows: number; errors: number; warnings: number; withIssues: number; skipped: number };
+};
+
+export function hashFile(buf: ArrayBuffer | Buffer): string {
+  return createHash("sha256").update(Buffer.from(buf as ArrayBuffer)).digest("hex");
+}
+
+/** Pick the sheet with the most recognisable header row. */
+function pickSheet(sheets: SheetRows[], preferred?: string) {
+  const candidates = sheets
+    .filter((s) => !preferred || s.name === preferred)
+    .map((s) => ({ sheet: s, det: detectColumns(s) }))
+    .filter((c) => c.det)
+    .sort((a, b) => Object.keys(b.det!.map).length - Object.keys(a.det!.map).length || b.sheet.rows.length - a.sheet.rows.length);
+  return candidates[0] ?? null;
+}
+
+/** Cross-row checks: repeated IDs (error) and likely duplicates (warning). */
+function crossRowChecks(rows: PreparedRow[]) {
+  const byNo = new Map<number, number>();
+  const byPhone = new Map<string, number>();
+  const byName = new Map<string, number>();
+  for (const r of rows) {
+    const n = r.normalized;
+    if (n.skip) continue;
+    if (n.memberNo !== null) {
+      const first = byNo.get(n.memberNo);
+      if (first) n.issues.push({ field: "memberId", severity: "error", message: `Member ID repeats row ${first}` });
+      else byNo.set(n.memberNo, r.rowNumber);
+    }
+    const phone = n.columns.phoneE164;
+    if (phone) {
+      const first = byPhone.get(phone);
+      if (first) n.issues.push({ field: "phone", severity: "warning", message: `Same phone as row ${first} — possible duplicate` });
+      else byPhone.set(phone, r.rowNumber);
+    }
+    const name = normalizeValue(`${n.columns.lastName} ${n.columns.firstName}`);
+    if (name.length > 3) {
+      const first = byName.get(name);
+      if (first) n.issues.push({ field: "name", severity: "warning", message: `Same name as row ${first} — possible duplicate` });
+      else byName.set(name, r.rowNumber);
+    }
+  }
+}
+
+/** Parse + validate a register file. Pure with respect to the database apart from reading lookups. */
+export async function prepareImport(
+  db: Db,
+  file: { name: string; data: ArrayBuffer | Buffer },
+  opts: { sheetName?: string; columnMap?: ColumnMap; now?: Date; agesAsOf?: Date } = {},
+): Promise<PreparedImport> {
+  const { sheets, modified } = await readWorkbook(file.data);
+  const now = opts.now ?? new Date();
+  // Ages ("12yrs") are counted back from when the register was last saved.
+  const agesAsOf = opts.agesAsOf ?? (modified && modified < now ? modified : now);
+  const picked = pickSheet(sheets, opts.sheetName);
+  if (!picked) throw new Error("Could not find a header row with Member ID / Last Name / First Name columns.");
+  const { sheet, det } = picked;
+  const columnMap = opts.columnMap ?? det!.map;
+  const lookups = await loadLookups(db);
+  const rows = extractRecords(sheet, det!.headerRow, columnMap).map(({ rowNumber, raw }) => ({
+    rowNumber,
+    raw,
+    normalized: normalizeRow(raw, lookups, now, agesAsOf),
+  }));
+  crossRowChecks(rows);
+  const count = (s: Issue["severity"]) => rows.filter((r) => r.normalized.issues.some((i) => i.severity === s)).length;
+  return {
+    fileName: file.name,
+    fileHash: hashFile(file.data),
+    sheetName: sheet.name,
+    headerRow: det!.headerRow,
+    columnMap,
+    headers: det!.headers,
+    rows,
+    agesAsOf: agesAsOf.toISOString().slice(0, 10),
+    summary: {
+      rows: rows.length,
+      errors: count("error"),
+      warnings: count("warning"),
+      withIssues: rows.filter((r) => r.normalized.issues.length > 0).length,
+      skipped: rows.filter((r) => r.normalized.skip).length,
+    },
+  };
+}
+
+/** Which Member column a raw value belongs to (to skip raw values for fields already filled). */
+const RAW_FIELD_COLUMN: Record<RawValueField, string> = {
+  GENDER: "gender", DOB: "dobDate", YEAR_JOINED: "yearJoined", ZONE: "zoneId", PHONE: "phoneE164",
+  EMAIL: "email", STATUS: "status", MARITAL: "maritalStatus", SPOUSE: "spouseName",
+  NEXT_OF_KIN: "nextOfKinName", PROFESSION: "professionId", MINISTRY: "ministries", MINISTRY_ROLE: "ministries",
+};
+
+const empty = (v: unknown) => v === null || v === undefined || v === "";
+
+function toDbColumns(c: NormalizedRow["columns"]) {
+  return { ...c, dobDate: c.dobDate ? new Date(`${c.dobDate}T00:00:00Z`) : null };
+}
+
+/**
+ * Fill-gaps update: only columns that are empty in the database are written,
+ * so re-running an import never overwrites a clerk's corrections.
+ */
+function gapFill(existing: Record<string, unknown>, incoming: ReturnType<typeof toDbColumns>) {
+  const data: Record<string, unknown> = {};
+  const kept: string[] = [];
+  for (const [k, v] of Object.entries(incoming)) {
+    if (k === "dobPrecision" || k === "dobDate" || k === "dobYear" || k === "phoneRaw" || k === "nextOfKinPhoneRaw") continue;
+    if (empty(v)) continue;
+    if (empty(existing[k])) data[k] = v;
+    else if (JSON.stringify(existing[k]) !== JSON.stringify(v)) kept.push(k);
+  }
+  if (data.phoneE164) data.phoneRaw = incoming.phoneRaw;
+  if (data.nextOfKinPhoneE164) data.nextOfKinPhoneRaw = incoming.nextOfKinPhoneRaw;
+  if (empty(existing.phoneRaw) && !data.phoneRaw && incoming.phoneRaw) data.phoneRaw = incoming.phoneRaw;
+  // DOB: fill when unknown, or upgrade a year-only DOB to a full date in the same year.
+  const rank = { UNKNOWN: 0, YEAR: 1, FULL: 2 } as const;
+  const cur = existing.dobPrecision as keyof typeof rank;
+  if (rank[incoming.dobPrecision] > rank[cur] && (cur === "UNKNOWN" || existing.dobYear === incoming.dobYear)) {
+    data.dobPrecision = incoming.dobPrecision;
+    data.dobDate = incoming.dobDate;
+    data.dobYear = incoming.dobYear;
+  }
+  return { data, kept };
+}
+
+export type CommitTotals = { created: number; updated: number; unchanged: number; skipped: number; errors: number };
+
+/**
+ * Write a prepared import. Idempotent: rows are matched on Member ID (or, for
+ * rows without an ID, on the same file + row number from an earlier run), and
+ * existing records only have empty fields filled.
+ */
+export async function commitImport(db: Db, actor: Actor, prepared: PreparedImport, opts: { chunkSize?: number } = {}) {
+  const batch = await db.importBatch.create({
+    data: {
+      fileName: prepared.fileName,
+      fileHash: prepared.fileHash,
+      sheetName: prepared.sheetName,
+      headerRow: prepared.headerRow,
+      columnMap: prepared.columnMap as Prisma.InputJsonValue,
+      status: "VALIDATED",
+      createdById: actor.userId,
+    },
+  });
+  const totals: CommitTotals = { created: 0, updated: 0, unchanged: 0, skipped: 0, errors: 0 };
+  const chunkSize = opts.chunkSize ?? 50;
+
+  // Rows that carry a Member ID go first, so rows without one are issued
+  // numbers above every ID in the file and can never take a number the file uses.
+  const ordered = [
+    ...prepared.rows.filter((r) => r.normalized.memberNo !== null),
+    ...prepared.rows.filter((r) => r.normalized.memberNo === null),
+  ];
+  for (let i = 0; i < ordered.length; i += chunkSize) {
+    const chunk = ordered.slice(i, i + chunkSize);
+    await db.$transaction(
+      async (tx) => {
+        const audit = new AuditWriter(tx, actor, "IMPORT", batch.id);
+        for (const row of chunk) {
+          const result = await commitRow(tx, audit, prepared, batch.id, row);
+          totals[result]++;
+        }
+      },
+      { timeout: 60_000, maxWait: 10_000 },
+    );
+  }
+
+  return db.importBatch.update({
+    where: { id: batch.id },
+    data: { status: "COMMITTED", committedAt: new Date(), totals: totals as Prisma.InputJsonValue },
+  });
+}
+
+async function commitRow(tx: Tx, audit: AuditWriter, prepared: PreparedImport, batchId: string, row: PreparedRow): Promise<keyof CommitTotals> {
+  const n = row.normalized;
+  const where = `${prepared.fileName}, row ${row.rowNumber}`;
+  const issues = [...n.issues];
+  const record = async (action: "CREATE" | "UPDATE" | "UNCHANGED" | "SKIP" | "ERROR", memberId: string | null) => {
+    await tx.importRow.create({
+      data: {
+        batchId,
+        rowNumber: row.rowNumber,
+        raw: JSON.parse(JSON.stringify(row.raw)) as Prisma.InputJsonValue,
+        normalized: JSON.parse(JSON.stringify(n.columns)) as Prisma.InputJsonValue,
+        issues: issues as unknown as Prisma.InputJsonValue,
+        action,
+        memberId,
+      },
+    });
+  };
+
+  if (n.skip) {
+    await record("SKIP", null);
+    return "skipped";
+  }
+  if (n.issues.some((i) => i.severity === "error" && i.field === "memberId")) {
+    await record("ERROR", null);
+    return "errors";
+  }
+
+  // Match: by member number, else by this file+row from a previous run.
+  let existing = n.memberNo !== null ? await tx.member.findUnique({ where: { memberNo: n.memberNo }, include: { ministries: true } }) : null;
+  if (!existing && n.memberNo === null) {
+    const prior = await tx.importRow.findFirst({
+      where: { rowNumber: row.rowNumber, memberId: { not: null }, batch: { fileHash: prepared.fileHash } },
+      select: { memberId: true },
+    });
+    let matchId = prior?.memberId ?? null;
+    if (!matchId) {
+      // A re-saved / corrected register: match on exact name, but only against
+      // members that an earlier import created from a row without an ID, and
+      // only when the match is unique.
+      const hits = await tx.$queryRaw<{ id: string }[]>`
+        SELECT DISTINCT m.id FROM "Member" m
+        JOIN "ImportRow" r ON r."memberId" = m.id AND r.action = 'CREATE' AND NOT (r.raw ? 'memberId')
+        WHERE lower(m."lastName") = lower(${n.columns.lastName}) AND lower(m."firstName") = lower(${n.columns.firstName})
+          AND m."mergedIntoId" IS NULL AND m."purgedAt" IS NULL`;
+      if (hits.length === 1) matchId = hits[0].id;
+    }
+    if (matchId) existing = await tx.member.findUnique({ where: { id: matchId }, include: { ministries: true } });
+  }
+
+  const cols = toDbColumns(n.columns);
+
+  if (!existing) {
+    const m = await tx.member.create({
+      data: {
+        ...(n.memberNo !== null ? { memberNo: n.memberNo } : {}),
+        ...cols,
+        ministries: n.ministries.length ? { createMany: { data: n.ministries, skipDuplicates: true } } : undefined,
+      },
+    });
+    if (n.rawValues.length) {
+      await tx.rawValue.createMany({
+        data: n.rawValues.map((r) => ({ memberId: m.id, field: r.field, rawValue: r.rawValue, normalized: normalizeValue(r.rawValue) })),
+        skipDuplicates: true,
+      });
+    }
+    await refreshCompleteness(tx, m.id);
+    await audit.log({ action: "CREATE", entity: "Member", entityId: m.id, memberId: m.id, newValue: { memberId: m.memberId, ...n.columns }, note: where });
+    await record("CREATE", m.id);
+    return "created";
+  }
+
+  if (existing.purgedAt || existing.mergedIntoId) {
+    issues.push({ field: "memberId", severity: "info", message: existing.purgedAt ? "Record was purged; not re-imported" : "Record was merged into another; not re-imported" });
+    await record("SKIP", existing.id);
+    return "skipped";
+  }
+
+  const { data, kept } = gapFill(existing as unknown as Record<string, unknown>, cols);
+  for (const k of kept) issues.push({ field: k, severity: "info", message: `Kept the value already in the system for ${k}` });
+
+  const have = new Set(existing.ministries.map((l) => `${l.ministryId}:${l.roleId}`));
+  const newLinks = n.ministries.filter((l) => !have.has(`${l.ministryId}:${l.roleId}`));
+
+  const rawToAdd = n.rawValues.filter((r) => {
+    const col = RAW_FIELD_COLUMN[r.field];
+    if (col === "ministries") return existing.ministries.length === 0;
+    return empty((existing as unknown as Record<string, unknown>)[col]) && empty(data[col]);
+  });
+  const rawCreated = rawToAdd.length
+    ? await tx.rawValue.createMany({
+        data: rawToAdd.map((r) => ({ memberId: existing.id, field: r.field, rawValue: r.rawValue, normalized: normalizeValue(r.rawValue) })),
+        skipDuplicates: true,
+      })
+    : { count: 0 };
+
+  if (Object.keys(data).length === 0 && newLinks.length === 0) {
+    const touched = rawCreated.count > 0;
+    await record(touched ? "UPDATE" : "UNCHANGED", existing.id);
+    return touched ? "updated" : "unchanged";
+  }
+
+  if (Object.keys(data).length) {
+    await audit.logChanges("Member", existing.id, existing as unknown as Record<string, unknown>, data, { memberId: existing.id, note: where });
+    await tx.member.update({ where: { id: existing.id }, data: { ...(data as Prisma.MemberUpdateInput), version: { increment: 1 } } });
+  }
+  for (const l of newLinks) {
+    const link = await tx.memberMinistry.create({ data: { memberId: existing.id, ...l }, include: { ministry: true, role: true } });
+    await audit.log({ action: "CREATE", entity: "MemberMinistry", entityId: link.id, memberId: existing.id, field: "ministry", newValue: `${link.ministry.label} · ${link.role.label}`, note: where });
+  }
+  await refreshCompleteness(tx, existing.id);
+  await record("UPDATE", existing.id);
+  return "updated";
+}
