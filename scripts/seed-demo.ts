@@ -21,6 +21,10 @@ import type { RoleKey } from "@/server/authz/catalog";
 async function main() {
   const db = createDbClient();
   try {
+    if ((await db.member.count()) > 0 && process.argv.includes("--if-empty")) {
+      console.log("Members already present — demo seed skipped.");
+      return;
+    }
     if ((await db.member.count()) > 0 && !process.argv.includes("--allow-nonempty")) {
       throw new Error("Database already has members. The demo seed only runs on an empty database.");
     }
