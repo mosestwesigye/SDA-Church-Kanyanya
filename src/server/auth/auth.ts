@@ -15,7 +15,8 @@ export function createAuth(client: Db = db) {
   return betterAuth({
     appName: "SDAK Church Manager",
     secret: process.env.BETTER_AUTH_SECRET,
-    baseURL: process.env.BETTER_AUTH_URL,
+    // On Vercel the production URL is known; BETTER_AUTH_URL overrides it (e.g. a custom domain).
+    baseURL: process.env.BETTER_AUTH_URL ?? (process.env.VERCEL_PROJECT_PRODUCTION_URL ? `https://${process.env.VERCEL_PROJECT_PRODUCTION_URL}` : undefined),
     database: prismaAdapter(client, { provider: "postgresql" }),
     emailAndPassword: {
       enabled: true,
