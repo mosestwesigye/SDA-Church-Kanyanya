@@ -16,7 +16,8 @@
     "db:bootstrap": "tsx scripts/bootstrap.ts",
     "db:seed:demo": "tsx scripts/seed-demo.ts",
     "import:register": "tsx scripts/import-register.ts",
-    "postinstall": "prisma generate"
+    "postinstall": "prisma generate",
+    "test:e2e": "playwright test"
   },
   "dependencies": {
     "@node-rs/argon2": "^2.2.1",

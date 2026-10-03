@@ -45,13 +45,16 @@ pnpm import:register data/register.xlsx             # commit
 pnpm test:unit
 pnpm test:integration    # needs TEST_DATABASE_URL (name must contain "test"; it is reset)
 pnpm typecheck && pnpm lint
+# End-to-end smoke tests (Playwright) against the demo seed:
+pnpm build && pnpm test:e2e            # or E2E_BASE_URL=http://localhost:3001 pnpm test:e2e
 ```
 
 ## Deploying to Vercel
 
 1. Create the project from this repo and add a Postgres database (Vercel Marketplace / Neon). `DATABASE_URL` should be the pooled URL.
 2. Set `BETTER_AUTH_SECRET`, `BETTER_AUTH_URL` (the production URL), `SESSION_IDLE_MINUTES`, `RESEND_API_KEY`, `EMAIL_FROM`.
-3. Run `pnpm db:migrate` and `pnpm db:bootstrap` once against the production database (from your machine with `DATABASE_URL` pointing at it), then import the register.
+3. For member sign-in by SMS, set `AT_USERNAME`, `AT_API_KEY` and optionally `AT_SENDER_ID` (Africa's Talking). Without them, phone sign-in fails in production.
+4. Run `pnpm db:migrate` and `pnpm db:bootstrap` once against the production database (from your machine with `DATABASE_URL` pointing at it), then import the register.
 
 ## Data rules
 
@@ -66,10 +69,42 @@ pnpm typecheck && pnpm lint
 - Report rows use the same scoped, field-projected queries as the directory, and columns the viewer may not read are left out.
 - Quarterly totals count members "on the books": Active, Irregular, Under discipline, or status not recorded. Gains and losses come from approved status changes.
 
+## Member self-service
+
+Members sign in at `/login/phone` with the phone number on their record and a 6-digit SMS code. There is no password.
+
+- A login is created from the register the first time, and only when exactly one living member has that number. Shared family numbers need the clerk.
+- The reply is the same whether or not the number is found.
+- Before the record is shown, the member accepts the privacy notice. This is stored as a DPPA consent for the current policy version.
+- At `/me` members see their own record and can ask for corrections. Clerks review the requests as a diff under **Self-service requests**. They approve all or some fields, or reject with a reason.
+- Approved fields are written through the audited member service with source `self-service`.
+- SMS goes through Africa's Talking (`AT_USERNAME`, `AT_API_KEY`, optional `AT_SENDER_ID`). In development the code is logged with the phone number masked.
+
+## Offline use (PWA)
+
+The app is installable: it has a manifest, icons and a service worker (`public/sw.js`).
+
+- Pages a staff member has opened are kept on the device for up to 7 days and can be read offline. This covers the dashboard, members, member profiles and edit forms, ministries, families and `/me`. Other pages show an offline notice.
+- Member edits made offline go to an IndexedDB outbox. The top bar shows how many are waiting, and they are sent when the connection returns.
+- Each queued edit carries the record version it was based on. If someone else changed the member in the meantime, the server rejects the edit as a conflict instead of overwriting, and the user redoes it.
+- Retries are applied only once (the client id is the audit correlation id).
+- Signing out deletes the offline pages and any unsent edits from the device, after a warning if edits are still waiting.
+- Limitation: the indicator follows the browser's online flag. A connection with no internet behind it still shows "Online", but pages fall back to the saved copy.
+
+## Admin
+
+Admin → Users, Roles & permissions (editable matrix with All / Own ministries / Own record scopes), Lists, Data rules, Security (sessions, per-role 2FA, failed sign-ins) and Audit log.
+
+- Every change is audited.
+- System Admin can't remove its own access-management permissions.
+- The last active admin can't be removed.
+- Two-step verification stays mandatory for Admin and Clerk.
+
 ## Security and privacy model
 
 - **Permissions**: role × resource × action matrix in the database (`Permission`), with scope `ALL`, `MINISTRY` or `SELF`. Defaults: `src/server/authz/defaults.ts`.
 - **Field-level restrictions** are enforced on the server. Marital status, spouse, next of kin and discipline data are never selected from the database for roles without `member.sensitive:read`. Ministry Heads only see members of their ministries. Treasurers see name, ID and ministry.
 - **Audit log** is append-only. A database trigger rejects `UPDATE`, `DELETE` and `TRUNCATE`. Every write goes through `AuditWriter` in the same transaction as the change.
 - **Member IDs** are permanent. A trigger derives `SDAK/M####` from a sequence, blocks changes and blocks hard deletes (purge wipes personal data and keeps a tombstone).
+- **Headers**: CSP, `X-Frame-Options: DENY`, `nosniff`, a strict referrer policy, a permissions policy and HSTS in production (`next.config.ts`).
 - **Auth**: argon2id passwords, TOTP 2FA (required for Admin and Clerk), 30-minute idle timeout, device list with revoke, database-backed rate limiting, password reset by email.

@@ -6,7 +6,7 @@ import { PageHeader, TopBar } from "@/components/shell/topbar";
 import { ROLE_LABELS } from "@/server/authz/catalog";
 import { auth, SESSION_IDLE_MINUTES } from "@/server/auth/auth";
 import { requireContext } from "@/server/auth/session";
-import { signOutAction } from "../../(auth)/actions";
+import { SignOutButton } from "@/components/shell/sign-out";
 import { revokeSessionAction } from "./actions";
 
 export const metadata: Metadata = { title: "Account" };
@@ -30,9 +30,7 @@ export default async function AccountPage() {
       <TopBar />
       <main className="p-4 md:p-7 space-y-6 max-w-3xl">
         <PageHeader title="Account" subtitle={`${ctx.label} · ${ctx.roles.map((r) => ROLE_LABELS[r]).join(", ")}`}>
-          <form action={signOutAction}>
-            <button className="btn btn-secondary">Sign out</button>
-          </form>
+          <SignOutButton />
         </PageHeader>
 
         <section className="card p-5">

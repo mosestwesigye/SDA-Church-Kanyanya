@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState, useTransition } from "react";
 import { maskUgPhoneInput, normalizeUgPhone } from "@/lib/phone";
 import { MARITAL_LABELS, STATUS_KEYS, STATUS_META } from "@/lib/labels";
+import { queueMemberUpdate } from "@/lib/outbox";
 import { checkDuplicatesAction, createMemberAction, searchMembersAction, updateMemberAction } from "@/app/(staff)/members/form-actions";
 import type { Option } from "./types";
 
@@ -92,6 +93,7 @@ export function MemberForm({
   const [step, setStep] = useState(startStep);
   const [pending, start] = useTransition();
   const [error, setError] = useState<string | null>(null);
+  const [savedOffline, setSavedOffline] = useState(false);
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
   const [dups, setDups] = useState<Dup[]>([]);
   const [confirmed, setConfirmed] = useState(false);
@@ -149,10 +151,24 @@ export function MemberForm({
       Object.assign(fields, { dobPrecision: all.dobPrecision, dobDate: all.dobDate, dobYear: all.dobYear });
     }
     start(async () => {
-      const r =
-        mode === "create"
-          ? await createMemberAction({ fields, ministries, confirmedNotDuplicate: confirmed })
-          : await updateMemberAction(memberId!, version!, fields);
+      // Offline edits go to the device outbox and sync later (version-checked on the server).
+      const queueOffline = async () => {
+        await queueMemberUpdate({ memberId: memberId!, version: version!, patch: fields, label: `${initial.lastName}, ${initial.firstName}` });
+        setSavedOffline(true);
+      };
+      if (mode === "edit" && !navigator.onLine) return queueOffline();
+      let r;
+      try {
+        r =
+          mode === "create"
+            ? await createMemberAction({ fields, ministries, confirmedNotDuplicate: confirmed })
+            : await updateMemberAction(memberId!, version!, fields);
+      } catch (e) {
+        if (mode === "edit" && !navigator.onLine) return queueOffline();
+        setError(mode === "create" && !navigator.onLine ? "You’re offline. New members can only be added online." : "Couldn’t reach the server. Check your connection and try again.");
+        console.error(e);
+        return;
+      }
       if (!r.ok) {
         setError(r.error);
         setFieldErrors(r.fieldErrors ?? {});
@@ -282,6 +298,11 @@ export function MemberForm({
         {error && (
           <p role="alert" className="rounded-[6px] bg-error-soft px-3 py-2 text-[14px] text-error">
             {error}
+          </p>
+        )}
+        {savedOffline && (
+          <p role="status" className="rounded-[6px] bg-primary-soft px-3 py-2 text-[14px] text-primary">
+            Saved on this device. It will be sent automatically when you’re back online — see the status in the top bar.
           </p>
         )}
 

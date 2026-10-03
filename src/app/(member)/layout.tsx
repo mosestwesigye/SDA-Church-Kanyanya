@@ -1,7 +1,7 @@
 import Image from "next/image";
 import Link from "next/link";
 import { requireContext } from "@/server/auth/session";
-import { signOutAction } from "../(auth)/actions";
+import { SignOutButton } from "@/components/shell/sign-out";
 
 /** Minimal shell for member self-service (phone sign-in). */
 export default async function MemberLayout({ children }: { children: React.ReactNode }) {
@@ -19,9 +19,7 @@ export default async function MemberLayout({ children }: { children: React.React
             </span>
           </Link>
           {staff && <Link href="/dashboard" className="min-h-[44px] content-center px-2 text-[14px] text-sidebar-muted">Staff view</Link>}
-          <form action={signOutAction}>
-            <button className="min-h-[44px] rounded-[6px] border border-white/25 px-3 text-[14px]">Sign out</button>
-          </form>
+          <SignOutButton className="min-h-[44px] rounded-[6px] border border-white/25 px-3 text-[14px]" />
         </div>
       </header>
       <main className="mx-auto max-w-3xl px-4 py-6">{children}</main>

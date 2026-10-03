@@ -1,6 +1,7 @@
 import type { Metadata, Viewport } from "next";
 import { Figtree, IBM_Plex_Mono } from "next/font/google";
 import { cookies } from "next/headers";
+import { ServiceWorkerRegister } from "@/components/shell/sw-register";
 import "./globals.css";
 
 const figtree = Figtree({ subsets: ["latin"], variable: "--font-figtree", display: "swap" });
@@ -10,6 +11,8 @@ export const metadata: Metadata = {
   title: { default: "SDAK Church Manager", template: "%s · SDAK Church Manager" },
   description: "Membership records for the Seventh-day Adventist Church Kanyanya.",
   robots: { index: false, follow: false },
+  appleWebApp: { capable: true, title: "SDAK Members", statusBarStyle: "default" },
+  icons: { apple: "/apple-touch-icon.png" },
 };
 
 export const viewport: Viewport = {
@@ -23,7 +26,10 @@ export default async function RootLayout({ children }: { children: React.ReactNo
   const theme = (await cookies()).get("theme")?.value;
   return (
     <html lang="en-UG" className={`${figtree.variable} ${plexMono.variable}`} data-theme={theme === "light" || theme === "dark" ? theme : undefined}>
-      <body>{children}</body>
+      <body>
+        {children}
+        <ServiceWorkerRegister />
+      </body>
     </html>
   );
 }
