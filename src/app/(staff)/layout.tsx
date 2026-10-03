@@ -1,5 +1,6 @@
 import Image from "next/image";
 import Link from "next/link";
+import { redirect } from "next/navigation";
 import { BottomNav, SidebarLinks, type LinkItem } from "@/components/shell/sidebar-links";
 import { NAV } from "@/components/shell/nav";
 import { ROLE_LABELS } from "@/server/authz/catalog";
@@ -13,6 +14,8 @@ function initials(name: string) {
 
 export default async function StaffLayout({ children }: { children: React.ReactNode }) {
   const ctx = await requireContext();
+  // Members signed in by phone only have the self-service area.
+  if (ctx.roles.length > 0 && ctx.roles.every((r) => r === "MEMBER")) redirect("/me");
   const canMembers = can(ctx, "member", "read");
   const [members, cleanup, approvals, ministries, corrections] = await Promise.all([
     canMembers ? db.member.count({ where: { AND: [memberScopeWhere(ctx), { deletedAt: null, mergedIntoId: null }] } }) : 0,

@@ -1,10 +1,11 @@
 import { betterAuth } from "better-auth";
 import { prismaAdapter } from "better-auth/adapters/prisma";
 import { nextCookies } from "better-auth/next-js";
-import { twoFactor } from "better-auth/plugins";
+import { phoneNumber, twoFactor } from "better-auth/plugins";
 import { AuditWriter } from "../audit/audit";
 import { db, type Db } from "../db";
 import { sendEmail } from "../notify/email";
+import { sendSms } from "../notify/sms";
 import { hashPassword, verifyPassword } from "./password";
 
 /** Idle timeout: a session expires after this many minutes without activity. */
@@ -52,6 +53,8 @@ export function createAuth(client: Db = db) {
         "/sign-in/email": { window: 15 * 60, max: 10 },
         "/two-factor/verify-totp": { window: 5 * 60, max: 5 },
         "/request-password-reset": { window: 15 * 60, max: 3 },
+        "/phone-number/send-otp": { window: 15 * 60, max: 3 },
+        "/phone-number/verify": { window: 5 * 60, max: 5 },
       },
     },
     databaseHooks: {
@@ -75,6 +78,20 @@ export function createAuth(client: Db = db) {
     },
     plugins: [
       twoFactor({ issuer: "SDAK Church Manager" }),
+      // Member self-service: sign in with a one-time SMS code. Logins are
+      // provisioned from the register first (src/server/selfservice), so the
+      // plugin never signs up unknown numbers.
+      phoneNumber({
+        otpLength: 6,
+        expiresIn: 5 * 60,
+        allowedAttempts: 3,
+        phoneNumberValidator: (n) => /^\+256\d{9}$/.test(n),
+        async sendOTP({ phoneNumber: to, code }) {
+          const user = await client.user.findUnique({ where: { phoneNumber: to }, select: { active: true } });
+          if (!user?.active) return;
+          await sendSms({ to, text: `${code} is your SDA Church Kanyanya sign-in code. It expires in 5 minutes. Don't share it with anyone.` });
+        },
+      }),
       nextCookies(),
     ],
   });

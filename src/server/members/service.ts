@@ -152,11 +152,15 @@ async function loadForWrite(tx: Tx, id: string) {
 }
 
 export async function updateMember(db: Db, ctx: AuthContext, id: string, input: unknown, opts: UpdateOptions = {}) {
+  return db.$transaction((tx) => updateMemberInTx(tx, ctx, id, input, opts));
+}
+
+/** updateMember inside a caller's transaction (so a workflow decision and the change commit together). */
+export async function updateMemberInTx(tx: Tx, ctx: AuthContext, id: string, input: unknown, opts: UpdateOptions = {}) {
   const patch = memberPatchSchema.parse(input);
   const fields = (Object.keys(patch) as (keyof MemberPatch)[]).filter((k) => patch[k] !== undefined);
   if (fields.length === 0) return { changes: [] };
-
-  return db.$transaction(async (tx) => {
+  {
     const before = await loadForWrite(tx, id);
     if (before.deletedAt) throw new ValidationError("Restore this member before editing.");
     const columns = fields.flatMap((f) => COLUMNS[f]);
@@ -183,7 +187,7 @@ export async function updateMember(db: Db, ctx: AuthContext, id: string, input: 
     if (res.count !== 1) throw new ConflictError();
     await refreshCompleteness(tx, id);
     return { changes };
-  });
+  }
 }
 
 export const memberCreateSchema = memberPatchSchema.required({ lastName: true, firstName: true });

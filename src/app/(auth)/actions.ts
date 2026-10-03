@@ -116,3 +116,52 @@ export async function signOutAction() {
   await auth.api.signOut({ headers: await headers() });
   redirect("/login");
 }
+
+// ───────── Member self-service: phone + SMS code ─────────
+
+export type PhoneState = { error?: string; ok?: string; phone?: string; step?: "phone" | "code" } | undefined;
+
+const GENERIC_SENT = "If this number is in the church register, a 6-digit code is on its way by SMS. It expires in 5 minutes.";
+
+export async function requestPhoneCodeAction(_: PhoneState, form: FormData): Promise<PhoneState> {
+  const typed = String(form.get("phone") ?? "").trim();
+  if (form.get("privacy") !== "on") return { error: "Please read and accept the privacy notice to continue.", phone: typed, step: "phone" };
+  const { provisionMemberLogin } = await import("@/server/selfservice/service");
+  const h = await headers();
+  for (const [key, limit] of [[`otp:ip:${ipOf(h)}`, LOGIN_LIMITS.perIp], [`otp:phone:${typed.replace(/\D/g, "").slice(-9)}`, LOGIN_LIMITS.otpSend]] as const) {
+    const r = await hit(db, key, limit);
+    if (!r.allowed) return { error: waitMessage(r.retryAfterSeconds), phone: typed, step: "phone" };
+  }
+  const to = await provisionMemberLogin(db, typed);
+  if (to) {
+    try {
+      await auth.api.sendPhoneNumberOTP({ body: { phoneNumber: to }, headers: h });
+    } catch (e) {
+      console.error("OTP send failed", e instanceof Error ? e.message : e);
+      return { error: "We couldn’t send the SMS just now. Please try again in a few minutes.", phone: typed, step: "phone" };
+    }
+  }
+  return { ok: GENERIC_SENT, phone: typed, step: "code" };
+}
+
+export async function verifyPhoneCodeAction(_: PhoneState, form: FormData): Promise<PhoneState> {
+  const typed = String(form.get("phone") ?? "").trim();
+  const code = String(form.get("code") ?? "").replace(/\s/g, "");
+  const h = await headers();
+  const r = await hit(db, `otpv:ip:${ipOf(h)}`, LOGIN_LIMITS.totp);
+  if (!r.allowed) return { error: waitMessage(r.retryAfterSeconds), phone: typed, step: "code" };
+  if (!/^\d{6}$/.test(code)) return { error: "Enter the 6-digit code from the SMS.", phone: typed, step: "code" };
+  const { normalizeUgPhone } = await import("@/lib/phone");
+  const e164 = normalizeUgPhone(typed)?.e164;
+  try {
+    if (!e164) throw new APIError("BAD_REQUEST");
+    await auth.api.verifyPhoneNumber({ body: { phoneNumber: e164, code }, headers: h });
+  } catch (e) {
+    if (e instanceof APIError) {
+      await new AuditWriter(db, { userId: null, label: "Phone sign-in", ipAddress: ipOf(h) }, "SELF_SERVICE").log({ action: "LOGIN_FAILED", entity: "User", note: "Wrong or expired SMS code" });
+      return { error: "That code is wrong or has expired. Check the SMS or ask for a new code.", phone: typed, step: "code" };
+    }
+    throw e;
+  }
+  redirect("/me");
+}

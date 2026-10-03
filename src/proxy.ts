@@ -8,7 +8,8 @@ import { NextResponse, type NextRequest } from "next/server";
  */
 export function proxy(request: NextRequest) {
   if (!getSessionCookie(request)) {
-    const url = new URL("/login", request.url);
+    const member = request.nextUrl.pathname === "/me" || request.nextUrl.pathname.startsWith("/me/");
+    const url = new URL(member ? "/login/phone" : "/login", request.url);
     if (request.nextUrl.pathname !== "/") url.searchParams.set("next", request.nextUrl.pathname);
     return NextResponse.redirect(url);
   }
