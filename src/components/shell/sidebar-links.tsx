@@ -44,7 +44,7 @@ export function SidebarLinks({ sections }: { sections: { section: string; items:
 export function BottomNav({ items }: { items: LinkItem[] }) {
   const pathname = usePathname();
   return (
-    <nav aria-label="Main" className="md:hidden fixed inset-x-0 bottom-0 z-20 border-t border-line bg-surface pb-[env(safe-area-inset-bottom)]">
+    <nav aria-label="Main" className="md:hidden print:hidden fixed inset-x-0 bottom-0 z-20 border-t border-line bg-surface pb-[env(safe-area-inset-bottom)]">
       <ul className="grid" style={{ gridTemplateColumns: `repeat(${items.length}, minmax(0, 1fr))` }}>
         {items.map((item) => {
           const active = isActive(pathname, item.href);

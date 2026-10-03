@@ -37,8 +37,8 @@ export default async function StaffLayout({ children }: { children: React.ReactN
   const roleLabel = ctx.roles.map((r) => ROLE_LABELS[r]).join(", ") || "No role";
 
   return (
-    <div className="min-h-dvh md:grid md:grid-cols-[248px_1fr]">
-      <aside className="hidden md:flex md:flex-col sticky top-0 h-dvh bg-sidebar text-sidebar-ink">
+    <div className="min-h-dvh md:grid md:grid-cols-[248px_1fr] print:block">
+      <aside className="hidden print:hidden md:flex md:flex-col sticky top-0 h-dvh bg-sidebar text-sidebar-ink">
         <Link href="/dashboard" className="flex items-center gap-2.5 px-5 pt-6 pb-4">
           <Image src="/sda-logo.png" alt="Seventh-day Adventist Church" width={42} height={44} priority />
           <span>
@@ -58,7 +58,7 @@ export default async function StaffLayout({ children }: { children: React.ReactN
         </div>
       </aside>
 
-      <div className="min-w-0 pb-[72px] md:pb-0">{children}</div>
+      <div className="min-w-0 pb-[72px] md:pb-0 print:pb-0">{children}</div>
       <BottomNav items={mobile} />
     </div>
   );

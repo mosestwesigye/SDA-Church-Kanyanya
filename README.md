@@ -57,6 +57,15 @@ pnpm typecheck && pnpm lint
 
 - **Photo in completeness**: Admin → Data rules → “Photo counts toward profile completeness” (setting `completeness.photoRequired`, default on, matching the design). Changing it is audited and immediately rescores every member.
 
+## Reports
+
+`/reports` has the Clerk's quarterly statistical report, membership by status, ministry rosters, zone lists and monthly birthday lists. Each one previews on screen, prints with clean A4 print styles, and downloads as PDF or Excel.
+
+- PDFs are generated on the server with `pdf-lib`. It is pure JavaScript, so no headless browser is needed on Vercel.
+- Downloads need `export:run` and an acknowledged privacy notice. Each download is written to `ExportLog` and the audit trail.
+- Report rows use the same scoped, field-projected queries as the directory, and columns the viewer may not read are left out.
+- Quarterly totals count members "on the books": Active, Irregular, Under discipline, or status not recorded. Gains and losses come from approved status changes.
+
 ## Security and privacy model
 
 - **Permissions**: role × resource × action matrix in the database (`Permission`), with scope `ALL`, `MINISTRY` or `SELF`. Defaults: `src/server/authz/defaults.ts`.

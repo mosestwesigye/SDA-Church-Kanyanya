@@ -206,3 +206,38 @@ body {
 @media (prefers-reduced-motion: reduce) {
   .skeleton { animation: none; }
 }
+
+/* ───────── Print (reports) ───────── */
+@media print {
+  :root,
+  :root:not([data-theme="light"]),
+  :root[data-theme="dark"] {
+    --bg: #ffffff;
+    --surface: #ffffff;
+    --surface-2: #f1f3f3;
+    --ink: #000000;
+    --ink-2: #333333;
+    --ink-3: #555555;
+    --line: #cccccc;
+    color-scheme: light;
+  }
+  @page {
+    size: A4;
+    margin: 14mm 12mm;
+  }
+  body {
+    font-size: 11px;
+  }
+  .card {
+    border: 0;
+  }
+  .print-avoid-break {
+    break-inside: avoid;
+  }
+  thead {
+    display: table-header-group;
+  }
+  tr {
+    break-inside: avoid;
+  }
+}

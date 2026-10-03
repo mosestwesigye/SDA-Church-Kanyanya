@@ -7,7 +7,7 @@ import { actorFrom } from "../members/service";
 export type Table = { title: string; columns: { key: string; label: string; width?: number }[]; rows: Record<string, unknown>[] };
 export type ExportFormat = "xlsx" | "csv";
 
-const NOTICE =
+export const PRIVACY_NOTICE =
   "Contains personal data protected by Uganda's Data Protection and Privacy Act, 2019. For church administration only; store securely and delete when no longer needed.";
 
 function cell(v: unknown): string | number {
@@ -33,7 +33,7 @@ export async function renderTable(t: Table, format: ExportFormat, meta: { genera
   wb.created = new Date();
   const ws = wb.addWorksheet(t.title.slice(0, 31), { views: [{ state: "frozen", ySplit: 4 }] });
   ws.addRow([`SDA Church Kanyanya — ${t.title}`]).font = { bold: true, size: 14 };
-  ws.addRow([`Generated ${new Date().toLocaleString("en-GB", { timeZone: "Africa/Kampala" })} by ${meta.generatedBy}. ${NOTICE}`]).font = { italic: true, size: 9 };
+  ws.addRow([`Generated ${new Date().toLocaleString("en-GB", { timeZone: "Africa/Kampala" })} by ${meta.generatedBy}. ${PRIVACY_NOTICE}`]).font = { italic: true, size: 9 };
   ws.addRow([]);
   const header = ws.addRow(t.columns.map((c) => c.label));
   header.font = { bold: true, color: { argb: "FFFFFFFF" } };

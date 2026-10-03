@@ -4,7 +4,7 @@ import { OnlineStatus } from "./online-status";
 /** Desktop top bar from the design: member search, sync state, primary action. */
 export function TopBar({ showAdd = false }: { showAdd?: boolean }) {
   return (
-    <header className="sticky top-0 z-10 flex h-16 items-center gap-4 border-b border-line bg-surface px-4 md:px-7">
+    <header className="sticky top-0 z-10 flex h-16 print:hidden items-center gap-4 border-b border-line bg-surface px-4 md:px-7">
       <form action="/members" role="search" className="flex-1 max-w-[460px]">
         <label htmlFor="global-search" className="sr-only">Search members</label>
         <input
