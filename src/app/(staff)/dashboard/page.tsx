@@ -157,7 +157,7 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
             {ministryData.length ? <BarList data={ministryData} caption="Members per ministry" labelWidth={110} /> : <p className="text-ink-2">No ministry links yet.</p>}
           </Card>
           {can(ctx, "audit", "read") && (
-            <Card title="Recent activity" aside={can(ctx, "admin.users", "manage") ? <Link href="/admin/audit" className="font-semibold text-primary">Audit log</Link> : undefined}>
+            <Card title="Recent activity" aside={can(ctx, "audit", "read") ? <Link href="/admin/audit" className="font-semibold text-primary">Audit log</Link> : undefined}>
               {activity.length === 0 ? (
                 <p className="text-ink-2">No recent changes.</p>
               ) : (
