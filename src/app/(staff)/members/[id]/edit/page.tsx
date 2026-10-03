@@ -5,7 +5,8 @@ import { MemberForm, type FormValues } from "@/components/members/member-form";
 import { PageHeader, TopBar } from "@/components/shell/topbar";
 import { fullName } from "@/lib/labels";
 import { requirePermission } from "@/server/auth/session";
-import { canOnMember } from "@/server/authz/policy";
+import { can, canOnMember } from "@/server/authz/policy";
+import { householdOptions, householdsOfMember } from "@/server/households/service";
 import { db } from "@/server/db";
 import { getMemberProfile } from "@/server/members/profile";
 import { formOptions } from "../../form-options";
@@ -48,7 +49,12 @@ export default async function EditMemberPage({ params, searchParams }: { params:
     nextOfKinName: m.nextOfKinName ?? "",
     nextOfKinPhone: m.nextOfKinPhoneRaw ?? "",
     professionId: m.professionId ?? "",
+    householdChoice: "",
+    householdNewName: "",
+    householdRelation: "OTHER",
   };
+  const canHousehold = can(ctx, "household", "update") && can(ctx, "member.sensitive", "read");
+  const [households, current] = canHousehold ? await Promise.all([householdOptions(db, ctx), householdsOfMember(db, ctx, id)]) : [[], []];
   const firstMissing = focus === "missing" ? ((m.missingFields ?? []) as string[]).map((f) => STEP_OF[f]).filter((n) => n !== undefined).sort()[0] : undefined;
 
   return (
@@ -72,7 +78,10 @@ export default async function EditMemberPage({ params, searchParams }: { params:
             sensitive: canOnMember(ctx, "member.sensitive", "update", row),
             statusEditable: !m.status,
             manageMinistry: false,
+            household: canHousehold,
           }}
+          households={households}
+          currentHouseholds={current.map((c) => ({ id: c.householdId, name: c.household.name, relation: c.relation }))}
         />
       </main>
     </>

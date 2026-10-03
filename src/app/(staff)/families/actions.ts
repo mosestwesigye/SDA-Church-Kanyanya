@@ -8,7 +8,7 @@ import { requireContext } from "@/server/auth/session";
 import { db } from "@/server/db";
 import { addToHousehold, createHousehold, removeFromHousehold, setHouseholdRelation } from "@/server/households/service";
 
-export async function createHouseholdAction(name: string, headMemberId: string) {
+export async function createHouseholdAction(name: string, headMemberId?: string) {
   const r = await attempt<{ id: string }>(async () => {
     const ctx = await requireContext();
     const h = await createHousehold(db, ctx, { name, headMemberId });

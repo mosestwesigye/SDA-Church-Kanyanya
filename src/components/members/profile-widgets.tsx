@@ -43,46 +43,76 @@ function Msg({ msg }: { msg: { ok: boolean; text: string } | null }) {
   );
 }
 
-/** Photo box from the design: dashed "No photo · Add" or the photo, click to upload. */
-export function PhotoBox({ memberId, photoDocId, canEdit, size = 88 }: { memberId: string; photoDocId: string | null; canEdit: boolean; size?: number }) {
+/** Shrink a phone photo before upload (keeps uploads small and under the 4 MB limit). */
+async function downscale(file: File, max = 1200): Promise<Blob> {
+  try {
+    const bitmap = await createImageBitmap(file, { imageOrientation: "from-image" });
+    const scale = Math.min(1, max / Math.max(bitmap.width, bitmap.height));
+    if (scale === 1 && file.size < 1_500_000) return file;
+    const canvas = document.createElement("canvas");
+    canvas.width = Math.round(bitmap.width * scale);
+    canvas.height = Math.round(bitmap.height * scale);
+    canvas.getContext("2d")!.drawImage(bitmap, 0, 0, canvas.width, canvas.height);
+    const blob = await new Promise<Blob | null>((res) => canvas.toBlob(res, "image/jpeg", 0.86));
+    return blob ?? file;
+  } catch {
+    return file;
+  }
+}
+
+/** Member photo: large preview, or an "Upload photo" button in the middle when there is none. */
+export function PhotoBox({ memberId, photoDocId, canEdit }: { memberId: string; photoDocId: string | null; canEdit: boolean }) {
   const input = useRef<HTMLInputElement>(null);
   const { pending, msg, run } = useRun();
-  const content = photoDocId ? (
-    // eslint-disable-next-line @next/next/no-img-element
-    <img src={`/api/files/${photoDocId}`} alt="Member photo" className="size-full rounded-[8px] object-cover" />
-  ) : (
-    <span className="mono text-center text-[11px] leading-tight text-ink-3">
-      No photo
-      <br />
-      {canEdit ? "Add" : ""}
-    </span>
-  );
+  const pick = () => input.current?.click();
   return (
-    <div className="shrink-0">
-      <button
-        type="button"
-        disabled={!canEdit || pending}
-        onClick={() => input.current?.click()}
-        aria-label={photoDocId ? "Replace photo" : "Add photo"}
-        className={`grid place-items-center rounded-[8px] ${photoDocId ? "" : "border-2 border-dashed border-line bg-[repeating-linear-gradient(45deg,var(--surface-2),var(--surface-2)_6px,var(--surface)_6px,var(--surface)_12px)]"}`}
-        style={{ width: size, height: size }}
-      >
-        {pending ? <span className="text-[12px] text-ink-2">Uploading…</span> : content}
-      </button>
+    <div className="w-[128px] shrink-0 md:w-[168px]">
+      <div className="group relative aspect-square w-full overflow-hidden rounded-[12px] border border-line bg-surface-2">
+        {photoDocId ? (
+          <>
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img src={`/api/files/${photoDocId}`} alt="Member photo" className="size-full object-cover" />
+            {canEdit && (
+              <button
+                type="button"
+                onClick={pick}
+                disabled={pending}
+                className="absolute inset-x-2 bottom-2 rounded-[8px] bg-black/60 px-2 py-1.5 text-[12px] font-semibold text-white backdrop-blur-sm transition-opacity md:opacity-0 md:group-hover:opacity-100 md:focus-visible:opacity-100"
+              >
+                {pending ? "Uploading…" : "Change photo"}
+              </button>
+            )}
+          </>
+        ) : (
+          <div className="flex size-full flex-col items-center justify-center gap-2 border-2 border-dashed border-line p-2 text-center">
+            <svg viewBox="0 0 24 24" className="size-9 text-ink-3 md:size-11" fill="none" stroke="currentColor" strokeWidth={1.5} aria-hidden>
+              <circle cx="12" cy="8.5" r="4" />
+              <path d="M4 20.5c.9-3.8 4.1-6 8-6s7.1 2.2 8 6" />
+            </svg>
+            {canEdit ? (
+              <button type="button" onClick={pick} disabled={pending} className="btn btn-primary min-h-[36px] px-3 text-[13px]">
+                {pending ? "Uploading…" : "Upload photo"}
+              </button>
+            ) : (
+              <span className="text-[12px] text-ink-3">No photo</span>
+            )}
+          </div>
+        )}
+      </div>
       {canEdit && (
         <input
           ref={input}
           type="file"
           accept="image/jpeg,image/png,image/webp"
-          capture="environment"
           className="hidden"
-          onChange={(e) => {
+          onChange={async (e) => {
             const f = e.target.files?.[0];
-            if (!f) return;
-            const fd = new FormData();
-            fd.set("file", f);
-            run(() => uploadPhotoAction(memberId, fd));
             e.target.value = "";
+            if (!f) return;
+            const blob = await downscale(f);
+            const fd = new FormData();
+            fd.set("file", blob === f ? f : new File([blob], `${f.name.replace(/\.\w+$/, "")}.jpg`, { type: "image/jpeg" }));
+            run(() => uploadPhotoAction(memberId, fd));
           }}
         />
       )}

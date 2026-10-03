@@ -98,19 +98,25 @@ export function NewHousehold({ suggestion }: { suggestion?: { name: string; head
   const { pending, msg, run } = useRun();
   return (
     <div className="space-y-3">
+      <label className="block">
+        <span className="field-label">Name <span className="text-error" aria-hidden>*</span></span>
+        <input className="input" value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. Kanyanya Cell 3 or Wasswa family" maxLength={80} />
+      </label>
       {head ? (
-        <div className="flex min-h-[44px] items-center justify-between rounded-[6px] border border-line px-3">
-          <span>Head: {head.lastName}, {head.firstName} <span className="mono text-[12px] text-ink-3">{head.memberId}</span></span>
-          <button type="button" className="text-[14px] text-primary" onClick={() => setHead(null)}>Change</button>
+        <div>
+          <span className="field-label">Head / cell leader</span>
+          <div className="flex min-h-[44px] items-center justify-between rounded-[6px] border border-line px-3">
+            <span>{head.lastName}, {head.firstName} <span className="mono text-[12px] text-ink-3">{head.memberId}</span></span>
+            <button type="button" className="text-[14px] text-primary" onClick={() => setHead(null)}>Remove</button>
+          </div>
         </div>
       ) : (
-        <MemberPicker label="Head / cell leader" onPick={(m) => (setHead(m), setName((n) => n || `${m.lastName} family`))} />
+        <MemberPicker label="Head / cell leader (optional)" onPick={(m) => (setHead(m), setName((n) => n || `${m.lastName} family`))} />
       )}
-      <label className="block">
-        <span className="field-label">Family or cell name</span>
-        <input className="input" value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. Wasswa family or Kanyanya Cell 3" />
-      </label>
-      <button type="button" className="btn btn-primary" disabled={!head || name.trim().length < 2 || pending} onClick={() => run(() => createHouseholdAction(name, head!.id))}>Create family or cell</button>
+      <p className="text-[13px] text-ink-2">You can add the leader and members now or later.</p>
+      <button type="button" className="btn btn-primary w-full" disabled={name.trim().length < 2 || pending} onClick={() => run(() => createHouseholdAction(name, head?.id))}>
+        {pending ? "Creating…" : "Create family or cell"}
+      </button>
       <Msg msg={msg} />
     </div>
   );

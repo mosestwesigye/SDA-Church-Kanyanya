@@ -4,12 +4,15 @@ import { EMPTY_VALUES, MemberForm } from "@/components/members/member-form";
 import { PageHeader, TopBar } from "@/components/shell/topbar";
 import { can } from "@/server/authz/policy";
 import { requirePermission } from "@/server/auth/session";
+import { db } from "@/server/db";
+import { householdOptions } from "@/server/households/service";
 import { formOptions } from "../form-options";
 
 export const metadata: Metadata = { title: "Add member" };
 
 export default async function NewMemberPage() {
   const ctx = await requirePermission("member", "create");
+  const canHousehold = can(ctx, "household", "update") && can(ctx, "member.sensitive", "read");
   return (
     <>
       <TopBar />
@@ -28,7 +31,9 @@ export default async function NewMemberPage() {
             sensitive: can(ctx, "member.sensitive", "update"),
             statusEditable: true,
             manageMinistry: can(ctx, "member", "update") || can(ctx, "ministry", "manage"),
+            household: canHousehold,
           }}
+          households={canHousehold ? await householdOptions(db, ctx) : []}
         />
       </main>
     </>

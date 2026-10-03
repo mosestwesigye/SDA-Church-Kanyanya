@@ -28,21 +28,35 @@ export type FormValues = {
   nextOfKinName: string;
   nextOfKinPhone: string;
   professionId: string;
+  /** Optional family/cell placement: "" (none), a household id, or "__new__". */
+  householdChoice: string;
+  householdNewName: string;
+  householdRelation: string;
 };
 
 export const EMPTY_VALUES: FormValues = {
   lastName: "", firstName: "", gender: "", dobMode: "UNKNOWN", dobDate: "", dobYear: "", yearJoined: "", zoneId: "", phone: "",
   email: "", status: "", maritalStatus: "", spouseMemberId: "", spouseLabel: "", spouseName: "", nextOfKinName: "", nextOfKinPhone: "", professionId: "",
+  householdChoice: "", householdNewName: "", householdRelation: "OTHER",
 };
 
-type Caps = { profile: boolean; contact: boolean; sensitive: boolean; statusEditable: boolean; manageMinistry: boolean };
+export type HouseholdOption = { id: string; label: string; size: number; hasHead: boolean };
+const HOUSEHOLD_RELATIONS = [
+  { id: "OTHER", label: "Cell member" },
+  { id: "HEAD", label: "Head / cell leader" },
+  { id: "SPOUSE", label: "Spouse" },
+  { id: "CHILD", label: "Child" },
+  { id: "DEPENDANT", label: "Dependant" },
+];
+
+type Caps = { profile: boolean; contact: boolean; sensitive: boolean; statusEditable: boolean; manageMinistry: boolean; household?: boolean };
 type Dup = { id: string; memberId: string; lastName: string; firstName: string; zone: string | null; reasons: string[]; samePhone: boolean; similarity: number };
 
 const STEPS = ["Identity", "Contact", "Status & family", "Service", "Review"] as const;
 const STEP_INFO: Record<(typeof STEPS)[number], string> = {
   Identity: "Name, gender, birth and when they joined",
   Contact: "Where they live and how to reach them",
-  "Status & family": "Membership status, marriage and next of kin",
+  "Status & family": "Membership status, marriage, next of kin and family / cell",
   Service: "Profession and ministries",
   Review: "Check everything before saving",
 };
@@ -86,6 +100,8 @@ export function MemberForm({
   options,
   caps,
   startStep = 0,
+  households = [],
+  currentHouseholds = [],
 }: {
   mode: "create" | "edit";
   memberId?: string;
@@ -94,6 +110,8 @@ export function MemberForm({
   options: { zones: Option[]; professions: Option[]; ministries: Option[]; roles: Option[] };
   caps: Caps;
   startStep?: number;
+  households?: HouseholdOption[];
+  currentHouseholds?: { id: string; name: string; relation: string }[];
 }) {
   const router = useRouter();
   const [v, setV] = useState<FormValues>(initial);
@@ -160,6 +178,16 @@ export function MemberForm({
     if (mode === "edit" && ("dobPrecision" in fields || "dobDate" in fields || "dobYear" in fields)) {
       Object.assign(fields, { dobPrecision: all.dobPrecision, dobDate: all.dobDate, dobYear: all.dobYear });
     }
+    const household =
+      caps.household && v.householdChoice
+        ? v.householdChoice === "__new__"
+          ? { newName: v.householdNewName.trim(), relation: v.householdRelation }
+          : { householdId: v.householdChoice, relation: v.householdRelation }
+        : null;
+    if (household && "newName" in household && (household.newName ?? "").length < 2) {
+      setError("Enter a name for the new family or cell, or choose “Not in a family or cell”.");
+      return;
+    }
     start(async () => {
       // Offline edits go to the device outbox and sync later (version-checked on the server).
       const queueOffline = async () => {
@@ -171,8 +199,8 @@ export function MemberForm({
       try {
         r =
           mode === "create"
-            ? await createMemberAction({ fields, ministries, confirmedNotDuplicate: confirmed })
-            : await updateMemberAction(memberId!, version!, fields);
+            ? await createMemberAction({ fields, ministries, confirmedNotDuplicate: confirmed, household })
+            : await updateMemberAction(memberId!, version!, fields, household);
       } catch (e) {
         if (mode === "edit" && !navigator.onLine) return queueOffline();
         setError(mode === "create" && !navigator.onLine ? "You’re offline. New members can only be added online." : "Couldn’t reach the server. Check your connection and try again.");
@@ -330,6 +358,9 @@ export function MemberForm({
             ) : (
               <p className="text-[14px] text-ink-2">Marital status, spouse and next of kin are restricted for your role.</p>
             )}
+            {caps.household && (
+              <HouseholdPicker v={v} set={set} households={households} current={currentHouseholds} />
+            )}
           </>
         )}
 
@@ -350,7 +381,7 @@ export function MemberForm({
           </>
         )}
 
-        {step === 4 && <Review v={v} options={options} ministries={ministries} caps={caps} />}
+        {step === 4 && <Review v={v} options={options} ministries={ministries} caps={caps} households={households} />}
 
         {error && (
           <p role="alert" className="rounded-[6px] bg-error-soft px-3 py-2 text-[14px] text-error">
@@ -423,6 +454,46 @@ export function MemberForm({
 }
 
 /* ───── field components ───── */
+
+function HouseholdPicker({ v, set, households, current }: { v: FormValues; set: <K extends keyof FormValues>(k: K, val: FormValues[K]) => void; households: HouseholdOption[]; current: { id: string; name: string; relation: string }[] }) {
+  const inIds = new Set(current.map((c) => c.id));
+  const choices = households.filter((h) => !inIds.has(h.id));
+  const chosen = households.find((h) => h.id === v.householdChoice);
+  const relations = HOUSEHOLD_RELATIONS.filter((r) => r.id !== "HEAD" || !chosen?.hasHead);
+  return (
+    <Group title="Family / cell" hint="Optional. Put them in an existing family or cell, or start a new one.">
+      {current.length > 0 && (
+        <p className="text-[14px]">
+          Already in: {current.map((c) => `${c.name} (${HOUSEHOLD_RELATIONS.find((r) => r.id === c.relation)?.label ?? c.relation})`).join(", ")}
+        </p>
+      )}
+      <div>
+        <label htmlFor="f-household" className="field-label">{current.length ? "Also add to" : "Family or cell"}</label>
+        <select
+          id="f-household"
+          className="input"
+          value={v.householdChoice}
+          onChange={(e) => {
+            set("householdChoice", e.target.value);
+            if (e.target.value && households.find((h) => h.id === e.target.value)?.hasHead && v.householdRelation === "HEAD") set("householdRelation", "OTHER");
+          }}
+        >
+          <option value="">{current.length ? "No other family or cell" : "Not in a family or cell"}</option>
+          {choices.map((h) => (
+            <option key={h.id} value={h.id}>{h.label} · {h.size} member{h.size === 1 ? "" : "s"}</option>
+          ))}
+          <option value="__new__">+ Start a new family or cell…</option>
+        </select>
+      </div>
+      {v.householdChoice === "__new__" && (
+        <Text label="New family or cell name" value={v.householdNewName} onChange={(x) => set("householdNewName", x)} placeholder="e.g. Kanyanya Cell 3" maxLength={80} />
+      )}
+      {v.householdChoice && (
+        <Select label="Their role in it" value={v.householdRelation} onChange={(x) => set("householdRelation", x || "OTHER")} options={relations} />
+      )}
+    </Group>
+  );
+}
 
 function Group({ title, hint, restricted, children }: { title: string; hint?: string; restricted?: boolean; children: React.ReactNode }) {
   return (
@@ -596,7 +667,7 @@ function MinistryPairs({ pairs, setPairs, options }: { pairs: { ministryId: stri
   );
 }
 
-function Review({ v, options, ministries, caps }: { v: FormValues; options: { zones: Option[]; professions: Option[]; ministries: Option[]; roles: Option[] }; ministries: { ministryId: string; roleId: string }[]; caps: Caps }) {
+function Review({ v, options, ministries, caps, households }: { v: FormValues; options: { zones: Option[]; professions: Option[]; ministries: Option[]; roles: Option[] }; ministries: { ministryId: string; roleId: string }[]; caps: Caps; households: HouseholdOption[] }) {
   const label = (list: Option[], id: string) => list.find((o) => o.id === id)?.label ?? "—";
   const rows: [string, string][] = [
     ["Name", `${v.lastName}, ${v.firstName}`],
@@ -617,6 +688,9 @@ function Review({ v, options, ministries, caps }: { v: FormValues; options: { zo
           ["Spouse", v.spouseLabel || v.spouseName || "—"],
           ["Next of kin", [v.nextOfKinName, v.nextOfKinPhone].filter(Boolean).join(" · ") || "—"],
         ] as [string, string][])
+      : []),
+    ...(v.householdChoice
+      ? ([["Family / cell", `${v.householdChoice === "__new__" ? `${v.householdNewName || "New"} (new)` : (households.find((h) => h.id === v.householdChoice)?.label ?? "—")} · ${HOUSEHOLD_RELATIONS.find((r) => r.id === v.householdRelation)?.label ?? ""}`]] as [string, string][])
       : []),
     ...ministries.filter((m) => m.ministryId).map((m) => ["Ministry", `${label(options.ministries, m.ministryId)} · ${label(options.roles, m.roleId)}`] as [string, string]),
   ];

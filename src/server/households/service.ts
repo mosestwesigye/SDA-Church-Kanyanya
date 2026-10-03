@@ -71,18 +71,52 @@ export async function householdsOfMember(db: DbOrTx, ctx: AuthContext, memberId:
   });
 }
 
-const createInput = z.object({ name: z.string().trim().min(2).max(80), headMemberId: z.string().min(1) });
+const createInput = z.object({ name: z.string().trim().min(2, "Enter a name for the family or cell").max(80), headMemberId: z.string().min(1).optional() });
 
 export async function createHousehold(db: Db, ctx: AuthContext, input: z.input<typeof createInput>) {
   assertCan(ctx, "household", "update");
   assertRead(ctx);
   const v = createInput.parse(input);
-  const head = await scopedMember(db, ctx, v.headMemberId);
+  // A cell can start without a leader; one can be added later.
+  const head = v.headMemberId ? await scopedMember(db, ctx, v.headMemberId) : null;
+  if (await db.household.findFirst({ where: { name: { equals: v.name, mode: "insensitive" } } })) {
+    throw new ValidationError(`A family or cell called “${v.name}” already exists.`, { name: "Already exists" });
+  }
   return db.$transaction(async (tx) => {
-    const h = await tx.household.create({ data: { name: v.name, members: { create: { memberId: head.id, relation: "HEAD" } } } });
-    await new AuditWriter(tx, actorFrom(ctx), "UI").log({ action: "CREATE", entity: "Household", entityId: h.id, memberId: head.id, newValue: { name: h.name, relation: "HEAD" } });
+    const h = await tx.household.create({ data: { name: v.name, ...(head ? { members: { create: { memberId: head.id, relation: "HEAD" } } } : {}) } });
+    await new AuditWriter(tx, actorFrom(ctx), "UI").log({ action: "CREATE", entity: "Household", entityId: h.id, memberId: head?.id ?? null, newValue: { name: h.name, ...(head ? { relation: "HEAD" } : {}) } });
     return h;
   });
+}
+
+/** Families and cells to choose from in the member form. */
+export async function householdOptions(db: DbOrTx, ctx: AuthContext) {
+  assertRead(ctx);
+  const rows = await db.household.findMany({
+    orderBy: { name: "asc" },
+    select: { id: true, name: true, members: { where: { member: LIVE }, select: { relation: true } } },
+  });
+  return rows.map((h) => ({ id: h.id, label: h.name, size: h.members.length, hasHead: h.members.some((m) => m.relation === "HEAD") }));
+}
+
+export const joinInput = z.object({
+  householdId: z.string().optional(),
+  newName: z.string().trim().max(80).optional(),
+  relation: z.enum(["HEAD", "SPOUSE", "CHILD", "DEPENDANT", "OTHER"]),
+});
+
+/** Put a member in an existing family/cell, or start a new one with them in it (used by the member form). */
+export async function joinHousehold(db: Db, ctx: AuthContext, memberId: string, input: z.input<typeof joinInput>) {
+  const v = joinInput.parse(input);
+  if (v.newName) {
+    if (v.relation === "HEAD") return createHousehold(db, ctx, { name: v.newName, headMemberId: memberId });
+    const h = await createHousehold(db, ctx, { name: v.newName });
+    await addToHousehold(db, ctx, { householdId: h.id, memberId, relation: v.relation });
+    return h;
+  }
+  if (!v.householdId) throw new ValidationError("Choose a family or cell.");
+  await addToHousehold(db, ctx, { householdId: v.householdId, memberId, relation: v.relation });
+  return { id: v.householdId };
 }
 
 const addInput = z.object({

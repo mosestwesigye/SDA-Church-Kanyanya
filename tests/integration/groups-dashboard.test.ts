@@ -2,7 +2,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import type { Db } from "@/server/db";
 import { daysToBirthday, dashboardStats, upcomingBirthdays } from "@/server/dashboard/stats";
 import { ForbiddenError, ValidationError } from "@/server/errors";
-import { addToHousehold, createHousehold, getHousehold, removeFromHousehold, spouseHouseholdSuggestions } from "@/server/households/service";
+import { addToHousehold, createHousehold, getHousehold, householdOptions, joinHousehold, removeFromHousehold, spouseHouseholdSuggestions } from "@/server/households/service";
 import { addMinistry, createMember, updateMember } from "@/server/members/service";
 import { listMinistries, ministryRoster, setMinistryRole } from "@/server/ministries/service";
 import { listId, testDb, userWith } from "./helpers";
@@ -123,4 +123,28 @@ describe("households", () => {
     const s = await spouseHouseholdSuggestions(db, clerk, 500);
     expect(s.filter((x) => [a.id, b.id].includes(x.id))).toHaveLength(1);
   });
+
+  it("creates a cell without a leader, rejects duplicate names, and audits it", async () => {
+    const name = `Kanyanya Cell ${Date.now().toString(36)}`;
+    const h = await createHousehold(db, clerk, { name });
+    expect((await getHousehold(db, clerk, h.id)).members).toHaveLength(0);
+    expect(await db.auditLog.count({ where: { entity: "Household", entityId: h.id, action: "CREATE" } })).toBe(1);
+    await expect(createHousehold(db, clerk, { name: name.toUpperCase() })).rejects.toBeInstanceOf(ValidationError);
+    expect((await householdOptions(db, clerk)).find((o) => o.id === h.id)).toMatchObject({ label: name, size: 0, hasHead: false });
+  });
+
+  it("places a member in an existing or new family/cell from the member form", async () => {
+    const leader = await createMember(db, clerk, { lastName: "Cell", firstName: "Leader" });
+    const member = await createMember(db, clerk, { lastName: "Cell", firstName: "Member" });
+    const created = await joinHousehold(db, clerk, leader.id, { newName: `Cell ${Date.now().toString(36)}`, relation: "HEAD" });
+    await joinHousehold(db, clerk, member.id, { householdId: created.id, relation: "OTHER" });
+    const h = await getHousehold(db, clerk, created.id);
+    expect(h.members.map((m) => [m.memberId, m.relation])).toEqual([[leader.id, "HEAD"], [member.id, "OTHER"]]);
+    // Only one head per family/cell; elders can't place members.
+    const other = await createMember(db, clerk, { lastName: "Cell", firstName: "Second" });
+    await expect(joinHousehold(db, clerk, other.id, { householdId: created.id, relation: "HEAD" })).rejects.toBeInstanceOf(ValidationError);
+    const elder = await userWith(db, ["ELDER"]);
+    await expect(joinHousehold(db, elder, other.id, { householdId: created.id, relation: "OTHER" })).rejects.toBeInstanceOf(ForbiddenError);
+  });
 });
+

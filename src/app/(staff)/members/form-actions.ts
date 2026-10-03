@@ -10,6 +10,22 @@ import { db } from "@/server/db";
 import { ValidationError } from "@/server/errors";
 import { findDuplicateCandidates, isStrongDuplicate, type DuplicateCandidate } from "@/server/members/duplicates";
 import { addMinistry, createMember, memberPatchSchema, updateMember } from "@/server/members/service";
+import { joinHousehold, joinInput } from "@/server/households/service";
+import type { RequestContext } from "@/server/auth/session";
+
+type HouseholdChoice = { householdId?: string; newName?: string; relation: string } | null | undefined;
+
+/** Optional family/cell placement after the member is saved; failures don't undo the member. */
+async function placeInHousehold(ctx: RequestContext, memberId: string, choice: HouseholdChoice): Promise<string | null> {
+  if (!choice || (!choice.householdId && !choice.newName)) return null;
+  try {
+    await joinHousehold(db, ctx, memberId, joinInput.parse(choice));
+    revalidatePath("/families");
+    return null;
+  } catch (e) {
+    return e instanceof Error ? e.message : "Couldn’t add them to the family or cell.";
+  }
+}
 
 export async function checkDuplicatesAction(input: { lastName?: string; firstName?: string; phone?: string | null; excludeId?: string }): Promise<DuplicateCandidate[]> {
   const ctx = await requireContext();
@@ -42,7 +58,7 @@ export async function searchMembersAction(q: string, excludeId?: string) {
 
 const ministryPairs = z.array(z.object({ ministryId: z.string().min(1), roleId: z.string().min(1) })).max(20);
 
-export async function createMemberAction(input: { fields: unknown; ministries: unknown; confirmedNotDuplicate: boolean }) {
+export async function createMemberAction(input: { fields: unknown; ministries: unknown; confirmedNotDuplicate: boolean; household?: HouseholdChoice }) {
   return attempt<{ id: string }>(async () => {
     const ctx = await requireContext();
     const fields = memberPatchSchema.parse(input.fields);
@@ -57,17 +73,20 @@ export async function createMemberAction(input: { fields: unknown; ministries: u
     }
     const m = await createMember(db, ctx, fields, { note: input.confirmedNotDuplicate ? "Saved after duplicate warning was confirmed" : undefined });
     for (const p of pairs) await addMinistry(db, ctx, m.id, p.ministryId, p.roleId);
+    const householdProblem = await placeInHousehold(ctx, m.id, input.household);
     revalidatePath("/members");
-    return { message: `Created ${m.memberId}.`, data: { id: m.id } };
+    return { message: householdProblem ? `Created ${m.memberId}, but not added to the family or cell: ${householdProblem}` : `Created ${m.memberId}.`, data: { id: m.id } };
   });
 }
 
-export async function updateMemberAction(id: string, version: number, patch: unknown) {
+export async function updateMemberAction(id: string, version: number, patch: unknown, household?: HouseholdChoice) {
   return attempt<{ id: string }>(async () => {
     const ctx = await requireContext();
     const { changes } = await updateMember(db, ctx, id, patch, { expectedVersion: version });
+    const householdProblem = await placeInHousehold(ctx, id, household);
+    if (householdProblem) throw new ValidationError(`${changes.length ? "Changes saved, but n" : "N"}ot added to the family or cell: ${householdProblem}`);
     revalidatePath(`/members/${id}`);
     revalidatePath("/members");
-    return { message: changes.length ? `Saved ${changes.length} change${changes.length === 1 ? "" : "s"}.` : "No changes to save.", data: { id } };
+    return { message: changes.length ? `Saved ${changes.length} change${changes.length === 1 ? "" : "s"}.` : household ? "Added to the family or cell." : "No changes to save.", data: { id } };
   });
 }
