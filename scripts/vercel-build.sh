@@ -12,9 +12,10 @@ if [ -z "${BETTER_AUTH_SECRET:-}" ]; then
   exit 1
 fi
 pnpm exec prisma generate
+pnpm exec tsx scripts/reset-demo-db.ts
 pnpm exec prisma migrate deploy
 pnpm exec tsx scripts/bootstrap.ts
-if [ "${DEMO_SEED:-}" = "1" ]; then
+if [ "${DEMO_SEED:-}" = "1" ] && [ "${RESET_DEMO_DATABASE:-}" != "yes" ]; then
   pnpm exec tsx scripts/seed-demo.ts --if-empty
 fi
 pnpm exec next build

@@ -14,6 +14,8 @@ export const ZONES = [
   "Lusanja", "Ttula", "Kitala", "Kyebando", "Nansana", "Kikuubo", "Kiyanja",
   "Lutunda", "Namere", "Kireka", "Kabaga", "Mugalu", "Gayaza", "Ggaba",
   "Katikamu", "Sekati", "Kisaasi", "Lugoba",
+  // Members living beyond the church zones (exact place kept in the import log).
+  "Outside church area",
 ];
 
 export const MINISTRIES = [
@@ -21,11 +23,15 @@ export const MINISTRIES = [
   "Music", "Treasury", "Development", "Hospital & Prison", "Prayer", "Family Life",
   "Education", "Communication", "Welfare", "PA System", "Ambassadors", "Adventurers",
   "Pathfinders", "Senior Citizens", "Interests",
+  // Standard SDA departments found in the register.
+  "Adventist Men", "Women's Ministries", "Stewardship", "Personal Ministries", "Possibility Ministries", "Secretariat",
 ];
 
 export const MINISTRY_ROLES = [
   "Member", "Head", "Assistant Head", "Elder", "Chief Elder", "Deacon", "Deaconess",
   "Teacher", "Clerk", "Treasurer", "Chorister", "Coordinator",
+  // Found in the register.
+  "Secretary", "Superintendent", "Pianist", "Usher", "Counsellor",
 ];
 
 export const PROFESSIONS = [
@@ -100,6 +106,32 @@ export const VALUE_MAPPINGS: { field: RawValueField; raw: string; to: string | n
   { field: "ZONE", raw: "Kyebando Central", to: "Kyebando" },
   { field: "ZONE", raw: "Seeta Kasangati", to: "Kasangati" },
   { field: "ZONE", raw: "Bulamu Gayaza", to: "Gayaza" },
+  // Places beyond the church zones → one zone (decided 2026-10-03).
+  ...["Buwambo", "Kasozi - Menvu", "Katalemwa", "Kitambuza", "Kitettika", "Lower Konge", "Luzira", "Maganjo", "Makerere", "Makerere Kavule", "Mbogo", "Muyenga", "Namugongo", "Nankuwade", "Seguku", "Wakiso", "Wampamba"].map((raw) => ({ field: "ZONE" as const, raw, to: "Outside church area" })),
+  { field: "MINISTRY", raw: "Women", to: "Women's Ministries" },
+  { field: "MINISTRY", raw: "Evangelism", to: "Personal Ministries" },
+  { field: "MINISTRY", raw: "PCM", to: "Personal Ministries" },
+  { field: "MINISTRY", raw: "Possibility", to: "Possibility Ministries" },
+  { field: "MINISTRY", raw: "Secretariate", to: "Secretariat" },
+  { field: "MINISTRY", raw: "Secretaliate", to: "Secretariat" },
+  { field: "MINISTRY", raw: "Clerk", to: "Secretariat" },
+  { field: "MINISTRY", raw: "Member", to: null },
+  { field: "MINISTRY_ROLE", raw: "Secritary", to: "Secretary" },
+  { field: "MINISTRY_ROLE", raw: "Abassadors' secretary", to: "Secretary" },
+  { field: "MINISTRY_ROLE", raw: "Ass. Pianist", to: "Pianist" },
+  { field: "MINISTRY_ROLE", raw: "Assistant Clerk", to: "Clerk" },
+  { field: "MINISTRY_ROLE", raw: "head clerk", to: "Clerk" },
+  { field: "MINISTRY_ROLE", raw: "Assistant supperintendant", to: "Superintendent" },
+  { field: "MINISTRY_ROLE", raw: "Head Supperintendant", to: "Superintendent" },
+  { field: "MINISTRY_ROLE", raw: "Assistant treasurer", to: "Treasurer" },
+  { field: "MINISTRY_ROLE", raw: "Church chior master", to: "Chorister" },
+  { field: "MINISTRY_ROLE", raw: "Singer", to: "Chorister" },
+  { field: "MINISTRY_ROLE", raw: "Soprano", to: "Chorister" },
+  { field: "MINISTRY_ROLE", raw: "Head of Adventurer", to: "Head" },
+  { field: "MINISTRY_ROLE", raw: "Leader", to: "Head" },
+  { field: "MINISTRY_ROLE", raw: "Director", to: "Head" },
+  { field: "MINISTRY_ROLE", raw: "Counselor", to: "Counsellor" },
+  { field: "MINISTRY_ROLE", raw: "Lesson Teacher", to: "Teacher" },
 ];
 
 export const DEFAULT_SETTINGS: Record<string, unknown> = {
