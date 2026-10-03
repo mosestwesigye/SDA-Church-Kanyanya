@@ -4,7 +4,7 @@ import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
 import { addToMinistryAction, removeFromMinistryAction, setRoleAction } from "@/app/(staff)/ministries/actions";
 import { addMemberAction, createHouseholdAction, removeMemberAction, setRelationAction } from "@/app/(staff)/families/actions";
-import { MemberPicker, type Picked } from "@/components/members/member-picker";
+import { MemberPicker, PickedMember, type Picked } from "@/components/members/member-picker";
 import type { Option } from "@/components/members/types";
 
 type R = { ok: boolean; message?: string; error?: string };
@@ -86,10 +86,10 @@ export function AddToMinistry({ ministryId, roles }: { ministryId: string; roles
 
 const RELATIONS: { id: string; label: string }[] = [
   { id: "HEAD", label: "Head / cell leader" },
+  { id: "OTHER", label: "Cell member" },
   { id: "SPOUSE", label: "Spouse" },
   { id: "CHILD", label: "Child" },
   { id: "DEPENDANT", label: "Dependant" },
-  { id: "OTHER", label: "Cell member" },
 ];
 
 export function NewHousehold({ suggestion }: { suggestion?: { name: string; head: Picked } }) {
@@ -103,13 +103,7 @@ export function NewHousehold({ suggestion }: { suggestion?: { name: string; head
         <input className="input" value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. Kanyanya Cell 3 or Wasswa family" maxLength={80} />
       </label>
       {head ? (
-        <div>
-          <span className="field-label">Head / cell leader</span>
-          <div className="flex min-h-[44px] items-center justify-between rounded-[6px] border border-line px-3">
-            <span>{head.lastName}, {head.firstName} <span className="mono text-[12px] text-ink-3">{head.memberId}</span></span>
-            <button type="button" className="text-[14px] text-primary" onClick={() => setHead(null)}>Remove</button>
-          </div>
-        </div>
+        <PickedMember label="Head / cell leader" member={head} onClear={() => setHead(null)} />
       ) : (
         <MemberPicker label="Head / cell leader (optional)" onPick={(m) => (setHead(m), setName((n) => n || `${m.lastName} family`))} />
       )}
@@ -122,23 +116,22 @@ export function NewHousehold({ suggestion }: { suggestion?: { name: string; head
   );
 }
 
-export function AddHouseholdMember({ householdId, hasHead }: { householdId: string; hasHead: boolean }) {
+export function AddHouseholdMember({ householdId, hasHead, memberIds = [] }: { householdId: string; hasHead: boolean; memberIds?: string[] }) {
   const [picked, setPicked] = useState<Picked | null>(null);
-  const [relation, setRelation] = useState(hasHead ? "CHILD" : "HEAD");
+  const [chosenRelation, setRelation] = useState(hasHead ? "OTHER" : "HEAD");
+  // Once a head exists (e.g. just added), "Head" is no longer offered.
+  const relation = chosenRelation === "HEAD" && hasHead ? "OTHER" : chosenRelation;
   const [linkSpouse, setLinkSpouse] = useState(true);
   const { pending, msg, run } = useRun();
   return (
     <div className="space-y-3">
       {picked ? (
-        <div className="flex min-h-[44px] items-center justify-between rounded-[6px] border border-line px-3">
-          <span>{picked.lastName}, {picked.firstName} <span className="mono text-[12px] text-ink-3">{picked.memberId}</span></span>
-          <button type="button" className="text-[14px] text-primary" onClick={() => setPicked(null)}>Change</button>
-        </div>
+        <PickedMember label="Member" member={picked} onClear={() => setPicked(null)} />
       ) : (
-        <MemberPicker label="Add a member" onPick={setPicked} />
+        <MemberPicker label="Find a member" onPick={setPicked} excludeIds={memberIds} />
       )}
       <label className="block">
-        <span className="field-label">Relation</span>
+        <span className="field-label">Role in this family / cell</span>
         <select className="input" value={relation} onChange={(e) => setRelation(e.target.value)}>
           {RELATIONS.filter((r) => r.id !== "HEAD" || !hasHead).map((r) => <option key={r.id} value={r.id}>{r.label}</option>)}
         </select>
@@ -149,7 +142,14 @@ export function AddHouseholdMember({ householdId, hasHead }: { householdId: stri
           Also set Married and link them as spouses on both records
         </label>
       )}
-      <button type="button" className="btn btn-primary" disabled={!picked || pending} onClick={() => run(() => addMemberAction(householdId, picked!.id, relation as never, relation === "SPOUSE" && linkSpouse), () => setPicked(null))}>Add</button>
+      <button
+        type="button"
+        className="btn btn-primary w-full"
+        disabled={!picked || pending}
+        onClick={() => run(() => addMemberAction(householdId, picked!.id, relation as never, relation === "SPOUSE" && linkSpouse), () => setPicked(null))}
+      >
+        {pending ? "Saving…" : picked ? `Add ${picked.firstName} ${picked.lastName}` : "Choose a member first"}
+      </button>
       <Msg msg={msg} />
     </div>
   );

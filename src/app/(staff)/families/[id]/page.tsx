@@ -47,6 +47,14 @@ export default async function HouseholdPage({ params }: { params: Promise<{ id: 
                 </tr>
               </thead>
               <tbody>
+                {h.members.length === 0 && (
+                  <tr>
+                    <td colSpan={canEdit ? 6 : 5} className="px-4 py-12 text-center">
+                      <p className="font-semibold">No members yet</p>
+                      <p className="mt-1 text-[14px] text-ink-2">{canEdit ? "Search for a member on the right and add them, starting with the head or cell leader." : "Members added to this family or cell will appear here."}</p>
+                    </td>
+                  </tr>
+                )}
                 {h.members.map((row) => {
                   const m = row.member;
                   const name = `${m.lastName}, ${m.firstName}`;
@@ -74,7 +82,7 @@ export default async function HouseholdPage({ params }: { params: Promise<{ id: 
           {canEdit && (
             <aside className="card h-fit p-5">
               <h2 className="mb-3 text-[17px] font-semibold">Add a member</h2>
-              <AddHouseholdMember householdId={h.id} hasHead={Boolean(head)} />
+              <AddHouseholdMember householdId={h.id} hasHead={Boolean(head)} memberIds={h.members.map((x) => x.member.id)} />
             </aside>
           )}
         </div>

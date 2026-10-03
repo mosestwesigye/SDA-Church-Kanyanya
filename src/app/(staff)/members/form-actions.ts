@@ -5,7 +5,7 @@ import { z } from "zod";
 import type { Prisma } from "@/generated/prisma/client";
 import { attempt } from "@/server/action-result";
 import { requireContext } from "@/server/auth/session";
-import { memberScopeWhere } from "@/server/authz/policy";
+import { can, memberScopeWhere } from "@/server/authz/policy";
 import { db } from "@/server/db";
 import { ValidationError } from "@/server/errors";
 import { findDuplicateCandidates, isStrongDuplicate, type DuplicateCandidate } from "@/server/members/duplicates";
@@ -33,7 +33,7 @@ export async function checkDuplicatesAction(input: { lastName?: string; firstNam
 }
 
 /** Member picker (e.g. spouse): name or ID search within the caller's scope. */
-export async function searchMembersAction(q: string, excludeId?: string) {
+export async function searchMembersAction(q: string, excludeId?: string, excludeIds: string[] = []) {
   const ctx = await requireContext();
   const text = q.trim();
   if (text.length < 2) return [];
@@ -43,17 +43,17 @@ export async function searchMembersAction(q: string, excludeId?: string) {
     where: {
       AND: [
         memberScopeWhere(ctx) as Prisma.MemberWhereInput,
-        { deletedAt: null, mergedIntoId: null, purgedAt: null, id: { not: excludeId ?? "" } },
+        { deletedAt: null, mergedIntoId: null, purgedAt: null, id: { notIn: [excludeId ?? "", ...excludeIds.slice(0, 200)] } },
         idNo
           ? { memberNo: Number(idNo[1]) }
           : { AND: tokens.map((t) => ({ OR: [{ lastName: { contains: t, mode: "insensitive" as const } }, { firstName: { contains: t, mode: "insensitive" as const } }] })) },
       ],
     },
-    select: { id: true, memberId: true, lastName: true, firstName: true },
+    select: { id: true, memberId: true, lastName: true, firstName: true, ...(can(ctx, "member.profile", "read") ? { zone: { select: { label: true } } } : {}) },
     orderBy: [{ lastName: "asc" }, { firstName: "asc" }],
-    take: 8,
+    take: 10,
   });
-  return rows;
+  return rows.map((r) => ({ id: r.id, memberId: r.memberId, lastName: r.lastName, firstName: r.firstName, zone: (r as { zone?: { label: string } | null }).zone?.label ?? null }));
 }
 
 const ministryPairs = z.array(z.object({ ministryId: z.string().min(1), roleId: z.string().min(1) })).max(20);
