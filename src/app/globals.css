@@ -31,6 +31,7 @@
   --status-left: #8a5a9e;
   --status-unknown: #a3aab3;
 
+  --card-shadow: 0 1px 2px rgb(16 24 40 / 0.04), 0 1px 3px rgb(16 24 40 / 0.05);
   --radius: 6px;
   --radius-card: 10px;
   --font-sans: "Proxima Nova", var(--font-figtree), "Figtree", system-ui, sans-serif;
@@ -56,6 +57,7 @@
     --hero-ink: #eceff3;
     --error: #ec8174;
     --error-soft: #3a1d1a;
+    --card-shadow: none;
     color-scheme: dark;
   }
 }
@@ -77,6 +79,7 @@
   --hero-ink: #eceff3;
   --error: #ec8174;
   --error-soft: #3a1d1a;
+  --card-shadow: none;
   color-scheme: dark;
 }
 
@@ -161,6 +164,7 @@ body {
     background: var(--surface);
     border: 1px solid var(--line);
     border-radius: var(--radius-card);
+    box-shadow: var(--card-shadow);
   }
   .field-label {
     display: block;

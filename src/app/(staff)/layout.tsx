@@ -3,6 +3,7 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { BottomNav, SidebarLinks, type LinkItem } from "@/components/shell/sidebar-links";
 import { NAV } from "@/components/shell/nav";
+import { NavIcon } from "@/components/shell/nav-icons";
 import { ROLE_LABELS } from "@/server/authz/catalog";
 import { can, memberScopeWhere } from "@/server/authz/policy";
 import { requireContext } from "@/server/auth/session";
@@ -32,31 +33,44 @@ export default async function StaffLayout({ children }: { children: React.ReactN
   })).filter((s) => s.items.length > 0);
   const sections = visible.map((s) => ({
     section: s.section,
-    items: s.items.map<LinkItem>((i) => ({ href: i.href, label: i.label, count: i.countKey ? counts[i.countKey] : undefined })),
+    items: s.items.map<LinkItem>((i) => ({ href: i.href, label: i.label, icon: i.icon, attention: i.attention, count: i.countKey ? counts[i.countKey] : undefined })),
   }));
-  const mobile: LinkItem[] = visible.flatMap((s) => s.items.filter((i) => i.mobile)).map((i) => ({ href: i.href, label: i.label === "Data clean-up" ? "Clean-up" : i.label === "Dashboard" ? "Home" : i.label }));
-  mobile.push({ href: "/account", label: "More" });
+  const mobile: LinkItem[] = visible
+    .flatMap((s) => s.items.filter((i) => i.mobile))
+    .map((i) => ({ href: i.href, icon: i.icon, attention: i.attention, count: i.countKey ? counts[i.countKey] : undefined, label: i.label === "Data clean-up" ? "Clean-up" : i.label === "Dashboard" ? "Home" : i.label }));
+  mobile.push({ href: "/account", label: "More", icon: "more" });
 
   const roleLabel = ctx.roles.map((r) => ROLE_LABELS[r]).join(", ") || "No role";
 
   return (
     <div className="min-h-dvh md:grid md:grid-cols-[248px_1fr] print:block">
       <aside className="hidden print:hidden md:flex md:flex-col sticky top-0 h-dvh bg-sidebar text-sidebar-ink">
-        <Link href="/dashboard" className="flex items-center gap-2.5 px-5 pt-6 pb-4">
-          <Image src="/sda-logo.png" alt="Seventh-day Adventist Church" width={42} height={44} priority />
-          <span>
-            <span className="block text-[16px] font-semibold leading-[1.2]">SDAK Church Manager</span>
-            <span className="block text-[12px] text-sidebar-muted whitespace-nowrap">SDA Church Kanyanya · CUC</span>
+        <Link href="/dashboard" className="mx-3 mt-4 flex items-center gap-2.5 rounded-[10px] px-2.5 py-3 hover:bg-white/[0.04]">
+          <span className="grid size-9 shrink-0 place-items-center rounded-[9px] bg-white/[0.08] ring-1 ring-white/10">
+            <Image src="/sda-mark.png" alt="" width={21} height={23} priority />
           </span>
+          <span className="min-w-0">
+            <span className="block truncate text-[14px] font-semibold leading-tight tracking-[-0.01em]">SDAK Church Manager</span>
+            <span className="mt-0.5 block truncate text-[12px] text-sidebar-muted">SDA Church Kanyanya</span>
+          </span>
+          <span className="sr-only">Seventh-day Adventist Church, Central Uganda Conference — dashboard</span>
         </Link>
+        <div aria-hidden className="mx-6 mt-3 border-t border-white/10" />
         <SidebarLinks sections={sections} />
-        <div className="border-t border-white/10 mx-[14px] py-4 flex items-center gap-3">
-          <span aria-hidden className="grid place-items-center size-9 rounded-full bg-white/15 text-[13px] font-semibold">{initials(ctx.label)}</span>
-          <Link href="/account" className="min-w-0 flex-1">
-            <span className="block text-[13px] font-semibold truncate">{ctx.label}</span>
-            <span className="block text-[12px] text-sidebar-muted truncate">
-              {roleLabel} · {ctx.twoFactorEnabled ? "2FA on" : "2FA off"}
+        <div className="m-3 rounded-[10px] bg-white/[0.06] p-2.5 ring-1 ring-white/[0.08]">
+          <div className="flex items-center gap-3">
+            <span aria-hidden className="grid size-9 shrink-0 place-items-center rounded-full bg-[#9fd6de] text-[13px] font-semibold text-sidebar">{initials(ctx.label)}</span>
+            <span className="min-w-0 flex-1">
+              <span className="block truncate text-[13px] font-semibold">{ctx.label}</span>
+              <span className="block truncate text-[12px] text-sidebar-muted">{roleLabel}</span>
             </span>
+            <Link href="/account" aria-label="Account settings" title="Account settings" className="grid size-9 shrink-0 place-items-center rounded-[8px] text-sidebar-muted hover:bg-white/10 hover:text-white">
+              <NavIcon name="account" className="size-[18px]" />
+            </Link>
+          </div>
+          <Link href="/account" className="mt-2 flex items-center gap-2 rounded-[6px] px-1 text-[12px] text-sidebar-muted hover:text-white">
+            <span aria-hidden className={`size-1.5 rounded-full ${ctx.twoFactorEnabled ? "bg-[#6fcf97]" : "bg-[#e9b44c]"}`} />
+            {ctx.twoFactorEnabled ? "Two-step verification on" : "Two-step verification off — turn on"}
           </Link>
         </div>
       </aside>

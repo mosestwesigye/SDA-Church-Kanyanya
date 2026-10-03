@@ -8,7 +8,7 @@ import { requirePermission } from "@/server/auth/session";
 import { db } from "@/server/db";
 import { correctionQueue } from "@/server/selfservice/service";
 
-export const metadata: Metadata = { title: "Self-service requests" };
+export const metadata: Metadata = { title: "Member requests" };
 
 export default async function SelfServiceRequestsPage({ searchParams }: { searchParams: Promise<{ view?: string }> }) {
   const ctx = await requirePermission("correction_request", "review");
@@ -22,7 +22,7 @@ export default async function SelfServiceRequestsPage({ searchParams }: { search
     <>
       <TopBar />
       <main className="p-4 md:p-7">
-        <PageHeader title="Self-service requests" subtitle="Corrections members asked for after signing in with their phone. Approved changes are saved with the audit source “self-service”." />
+        <PageHeader title="Member requests" subtitle="Corrections members asked for after signing in with their phone. Approved changes are saved with the audit source “self-service”." />
         <nav aria-label="Request views" className="mb-5 flex gap-1 border-b border-line">
           {tab("/self-service-requests", "Waiting", !done)}
           {tab("/self-service-requests?view=done", "Recently decided", done)}
