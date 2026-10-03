@@ -1,8 +1,21 @@
 "use client";
 
-import { useActionState } from "react";
+import { useActionState, useState } from "react";
 import { FormMessage, SubmitButton } from "@/components/ui/form";
 import { enrolAction, type EnrolState } from "./actions";
+
+function CopyButton({ text }: { text: string }) {
+  const [copied, setCopied] = useState(false);
+  return (
+    <button
+      type="button"
+      className="min-h-[36px] rounded-[6px] border border-line bg-surface px-3 text-[13px] font-semibold text-primary"
+      onClick={() => navigator.clipboard?.writeText(text).then(() => setCopied(true), () => setCopied(false))}
+    >
+      {copied ? "Copied" : "Copy key"}
+    </button>
+  );
+}
 
 export function EnrolForm() {
   const [state, action] = useActionState<EnrolState, FormData>(enrolAction, { step: "password" });
@@ -25,11 +38,19 @@ export function EnrolForm() {
     <div className="space-y-6">
       <ol className="space-y-6 list-decimal pl-5">
         <li>
-          <p className="mb-3">Scan this code with your authenticator app.</p>
-          <div className="inline-block rounded-[10px] bg-white p-2 border border-line" dangerouslySetInnerHTML={{ __html: state.qrSvg }} aria-label="QR code for your authenticator app" role="img" />
-          <p className="text-[13px] text-ink-2 mt-2">
-            Can’t scan? Enter this key: <span className="mono break-all">{state.secret}</span>
+          <p className="mb-1">Add SDAK Church Manager to your authenticator app.</p>
+          <p className="mb-3 text-[14px] text-ink-2">
+            On a computer, scan the code with your phone. On the phone that has the app, tap the button instead — a phone can’t scan its own screen.
           </p>
+          <a href={state.totpURI} className="btn btn-primary mb-4 w-full sm:w-auto">Add to authenticator app on this phone</a>
+          <div className="block w-fit rounded-[10px] border border-line bg-white p-2" dangerouslySetInnerHTML={{ __html: state.qrSvg }} aria-label="QR code for your authenticator app" role="img" />
+          <div className="mt-3 text-[13px] text-ink-2">
+            <p>Or type this key into the app (choose “Enter a setup key”, time-based):</p>
+            <div className="mt-1 flex flex-wrap items-center gap-2">
+              <span className="mono break-all rounded-[6px] bg-surface-2 px-2 py-1 text-ink">{state.secret}</span>
+              <CopyButton text={state.secret} />
+            </div>
+          </div>
         </li>
         <li>
           <p className="mb-2">Save these backup codes somewhere safe. Each works once if you lose your phone.</p>

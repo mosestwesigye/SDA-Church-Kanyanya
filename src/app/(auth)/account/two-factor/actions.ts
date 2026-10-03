@@ -11,7 +11,7 @@ import { db } from "@/server/db";
 
 export type EnrolState =
   | { step: "password"; error?: string }
-  | { step: "scan"; qrSvg: string; secret: string; backupCodes: string[]; error?: string };
+  | { step: "scan"; qrSvg: string; secret: string; totpURI: string; backupCodes: string[]; error?: string };
 
 /** Single action for both steps so the scan state is carried between attempts. */
 export async function enrolAction(prev: EnrolState, form: FormData): Promise<EnrolState> {
@@ -25,7 +25,7 @@ async function startEnrol(form: FormData): Promise<EnrolState> {
     if (res.method !== "totp") throw new Error("Unexpected two-factor method");
     const secret = new URL(res.totpURI).searchParams.get("secret") ?? "";
     const qrSvg = await QRCode.toString(res.totpURI, { type: "svg", margin: 1, width: 200 });
-    return { step: "scan", qrSvg, secret, backupCodes: res.backupCodes };
+    return { step: "scan", qrSvg, secret, totpURI: res.totpURI, backupCodes: res.backupCodes };
   } catch (e) {
     if (e instanceof APIError) return { step: "password", error: "That password is not correct." };
     throw e;
