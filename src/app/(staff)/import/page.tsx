@@ -6,6 +6,9 @@ import { formatDateTime } from "@/lib/labels";
 import { requirePermission } from "@/server/auth/session";
 import { db } from "@/server/db";
 
+// Validating and committing ~1,000 rows against a remote database can take a while.
+export const maxDuration = 300;
+
 export const metadata: Metadata = { title: "Import" };
 
 const STEPS = ["Upload", "Map columns", "Validate", "Commit"];

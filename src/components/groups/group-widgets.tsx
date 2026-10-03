@@ -85,11 +85,11 @@ export function AddToMinistry({ ministryId, roles }: { ministryId: string; roles
 /* ───── Households ───── */
 
 const RELATIONS: { id: string; label: string }[] = [
-  { id: "HEAD", label: "Head of household" },
+  { id: "HEAD", label: "Head / cell leader" },
   { id: "SPOUSE", label: "Spouse" },
   { id: "CHILD", label: "Child" },
   { id: "DEPENDANT", label: "Dependant" },
-  { id: "OTHER", label: "Other" },
+  { id: "OTHER", label: "Cell member" },
 ];
 
 export function NewHousehold({ suggestion }: { suggestion?: { name: string; head: Picked } }) {
@@ -104,13 +104,13 @@ export function NewHousehold({ suggestion }: { suggestion?: { name: string; head
           <button type="button" className="text-[14px] text-primary" onClick={() => setHead(null)}>Change</button>
         </div>
       ) : (
-        <MemberPicker label="Head of household" onPick={(m) => (setHead(m), setName((n) => n || `${m.lastName} household`))} />
+        <MemberPicker label="Head / cell leader" onPick={(m) => (setHead(m), setName((n) => n || `${m.lastName} family`))} />
       )}
       <label className="block">
-        <span className="field-label">Household name</span>
-        <input className="input" value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. Wasswa household" />
+        <span className="field-label">Family or cell name</span>
+        <input className="input" value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. Wasswa family or Kanyanya Cell 3" />
       </label>
-      <button type="button" className="btn btn-primary" disabled={!head || name.trim().length < 2 || pending} onClick={() => run(() => createHouseholdAction(name, head!.id))}>Create household</button>
+      <button type="button" className="btn btn-primary" disabled={!head || name.trim().length < 2 || pending} onClick={() => run(() => createHouseholdAction(name, head!.id))}>Create family or cell</button>
       <Msg msg={msg} />
     </div>
   );

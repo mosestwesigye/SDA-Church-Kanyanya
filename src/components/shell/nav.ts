@@ -18,7 +18,7 @@ export const NAV: { section: string; items: NavItem[] }[] = [
     items: [
       { href: "/dashboard", label: "Dashboard", icon: "dashboard", mobile: true },
       { href: "/members", label: "Members", icon: "members", need: ["member", "read"], countKey: "members", mobile: true },
-      { href: "/families", label: "Families", icon: "families", need: ["household", "read"] },
+      { href: "/families", label: "Families / Cells", icon: "families", need: ["household", "read"] },
       { href: "/cleanup", label: "Data clean-up", icon: "cleanup", need: ["cleanup", "use"], countKey: "cleanup", attention: true, mobile: true },
       { href: "/transfers", label: "Transfers & status", icon: "transfers", need: ["transfer", "read"], countKey: "approvals", attention: true },
       { href: "/ministries", label: "Ministries", icon: "ministries", need: ["ministry", "read"] },

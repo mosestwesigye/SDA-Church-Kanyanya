@@ -20,6 +20,10 @@ const csp = [
 
 const nextConfig: NextConfig = {
   poweredByHeader: false,
+  experimental: {
+    // Register workbooks and member documents are uploaded through server actions.
+    serverActions: { bodySizeLimit: "4mb" },
+  },
   async headers() {
     return [
       {

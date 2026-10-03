@@ -23,7 +23,7 @@ export async function addMemberAction(householdId: string, memberId: string, rel
     const ctx = await requireContext();
     await addToHousehold(db, ctx, { householdId, memberId, relation, linkSpouse });
     revalidatePath(`/families/${householdId}`);
-    return { message: linkSpouse ? "Added and linked as spouse on both records." : "Added to the household." };
+    return { message: linkSpouse ? "Added and linked as spouse on both records." : "Added to the family / cell." };
   });
 }
 
@@ -41,6 +41,6 @@ export async function removeMemberAction(householdId: string, memberId: string) 
     await removeFromHousehold(db, ctx, householdId, memberId);
     revalidatePath(`/families/${householdId}`);
     revalidatePath("/families");
-    return { message: "Removed from the household." };
+    return { message: "Removed from the family / cell." };
   });
 }

@@ -176,7 +176,7 @@ export function DocumentUpload({ memberId }: { memberId: string }) {
         </select>
       </div>
       <div className="flex-1 min-w-56">
-        <label htmlFor="doc-file" className="field-label">File (PDF or photo, up to 8 MB)</label>
+        <label htmlFor="doc-file" className="field-label">File (PDF or photo, up to 4 MB)</label>
         <input id="doc-file" name="file" type="file" accept="application/pdf,image/jpeg,image/png,image/webp" required className="input pt-2.5" />
       </div>
       <button className="btn btn-primary" disabled={pending}>{pending ? "Uploading…" : "Upload"}</button>

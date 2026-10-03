@@ -39,6 +39,13 @@ type Caps = { profile: boolean; contact: boolean; sensitive: boolean; statusEdit
 type Dup = { id: string; memberId: string; lastName: string; firstName: string; zone: string | null; reasons: string[]; samePhone: boolean; similarity: number };
 
 const STEPS = ["Identity", "Contact", "Status & family", "Service", "Review"] as const;
+const STEP_INFO: Record<(typeof STEPS)[number], string> = {
+  Identity: "Name, gender, birth and when they joined",
+  Contact: "Where they live and how to reach them",
+  "Status & family": "Membership status, marriage and next of kin",
+  Service: "Profession and ministries",
+  Review: "Check everything before saving",
+};
 
 /** Domain patch from form values (empty → null). */
 function toFields(v: FormValues) {
@@ -129,9 +136,12 @@ export function MemberForm({
     if (nokPhoneErr) e.nextOfKinPhone = nokPhoneErr;
     return e;
   }, [v, phoneErr, nokPhoneErr, thisYear]);
-  const errs = { ...stepErrors, ...fieldErrors };
+  // Don't shout about empty required fields until the user tries to move on.
+  const [attempted, setAttempted] = useState(false);
+  const visibleStepErrors = attempted ? stepErrors : Object.fromEntries(Object.entries(stepErrors).filter(([k]) => String(v[k as keyof FormValues] ?? "").trim() !== ""));
+  const errs = { ...visibleStepErrors, ...fieldErrors };
   const STEP_FIELDS: string[][] = [["lastName", "firstName", "dobDate", "dobYear", "yearJoined"], ["phone", "email"], ["nextOfKinPhone"], [], []];
-  const stepHasError = (i: number) => STEP_FIELDS[i].some((f) => stepErrors[f]);
+  const stepHasError = (i: number) => STEP_FIELDS[i].some((f) => visibleStepErrors[f]);
 
   function save() {
     setError(null);
@@ -183,43 +193,74 @@ export function MemberForm({
   const last = step === STEPS.length - 1;
 
   return (
-    <div className="grid gap-6 lg:grid-cols-[220px_minmax(0,1fr)_300px]">
+    <div className="grid items-start gap-6 lg:grid-cols-[240px_minmax(0,1fr)] xl:grid-cols-[240px_minmax(0,1fr)_300px]">
       {/* Stepper */}
-      <ol className="flex gap-1 overflow-x-auto lg:flex-col" aria-label="Steps">
-        {STEPS.map((s, i) => (
-          <li key={s}>
-            <button
-              type="button"
-              onClick={() => setStep(i)}
-              aria-current={step === i ? "step" : undefined}
-              className={`flex min-h-[44px] w-full items-center gap-2 whitespace-nowrap rounded-[6px] px-3 text-left text-[14px] ${step === i ? "bg-primary-soft font-semibold text-primary" : "text-ink-2 hover:bg-surface-2"}`}
-            >
-              <span className={`grid size-6 place-items-center rounded-full text-[12px] ${step === i ? "bg-primary text-primary-ink" : "bg-surface-2"}`}>{i + 1}</span>
-              {s}
-              {stepHasError(i) && <span className="text-error" aria-label="has errors">●</span>}
-            </button>
-          </li>
-        ))}
-      </ol>
+      <nav aria-label="Form steps" className="lg:sticky lg:top-[88px]">
+        <div className="mb-3 lg:hidden">
+          <div className="flex justify-between text-[13px] text-ink-2">
+            <span>Step {step + 1} of {STEPS.length}</span>
+            <span>{STEPS[step]}</span>
+          </div>
+          <div className="mt-1.5 h-1.5 rounded-full bg-surface-2">
+            <div className="h-full rounded-full bg-primary transition-all" style={{ width: `${((step + 1) / STEPS.length) * 100}%` }} />
+          </div>
+        </div>
+        <ol className="hidden space-y-1 lg:block">
+          {STEPS.map((s, i) => {
+            const done = i < step && !stepHasError(i);
+            return (
+              <li key={s} className="relative">
+                {i < STEPS.length - 1 && <span aria-hidden className={`absolute left-[23px] top-10 h-[calc(100%-24px)] w-px ${i < step ? "bg-primary" : "bg-line"}`} />}
+                <button
+                  type="button"
+                  onClick={() => setStep(i)}
+                  aria-current={step === i ? "step" : undefined}
+                  className={`flex w-full items-start gap-3 rounded-[8px] px-2.5 py-2 text-left ${step === i ? "bg-primary-soft" : "hover:bg-surface-2"}`}
+                >
+                  <span
+                    className={`mt-0.5 grid size-7 shrink-0 place-items-center rounded-full text-[12px] font-semibold ${
+                      stepHasError(i) ? "bg-error-soft text-error" : step === i ? "bg-primary text-primary-ink" : done ? "bg-primary/15 text-primary" : "border border-line bg-surface text-ink-2"
+                    }`}
+                  >
+                    {stepHasError(i) ? "!" : done ? "✓" : i + 1}
+                  </span>
+                  <span className="min-w-0">
+                    <span className={`block text-[14px] ${step === i ? "font-semibold text-primary" : "font-medium text-ink"}`}>{s}</span>
+                    <span className="block text-[12px] leading-snug text-ink-2">{STEP_INFO[s]}</span>
+                  </span>
+                </button>
+              </li>
+            );
+          })}
+        </ol>
+      </nav>
 
       <form
-        className="card p-5 space-y-5"
+        className="card overflow-hidden"
+        onInvalidCapture={() => setAttempted(true)}
         onSubmit={(e) => {
           e.preventDefault();
+          setAttempted(true);
           if (last) save();
           else setStep(step + 1);
         }}
       >
-        <h2 className="text-[19px] font-semibold">{STEPS[step]}</h2>
-
+        <header className="border-b border-line bg-surface-2/50 px-5 py-4 md:px-6">
+          <p className="text-[12px] font-semibold uppercase tracking-[0.08em] text-primary">Step {step + 1} of {STEPS.length}</p>
+          <h2 className="mt-1 text-[20px] font-semibold leading-tight">{STEPS[step]}</h2>
+          <p className="mt-1 text-[14px] text-ink-2">{STEP_INFO[STEPS[step]]}</p>
+        </header>
+        <div className="space-y-6 px-5 py-5 md:px-6">
         {step === 0 && (
           <>
-            <Row>
-              <Text label="Last name" value={v.lastName} onChange={(x) => set("lastName", x)} error={errs.lastName} autoFocus autoComplete="family-name" />
-              <Text label="First name" value={v.firstName} onChange={(x) => set("firstName", x)} error={errs.firstName} autoComplete="given-name" />
-            </Row>
+            <Group title="Name" hint="As written in the church register. Required.">
+              <Row>
+                <Text label="Last name" required value={v.lastName} onChange={(x) => set("lastName", x)} error={errs.lastName} autoFocus autoComplete="family-name" />
+                <Text label="First name" required value={v.firstName} onChange={(x) => set("firstName", x)} error={errs.firstName} autoComplete="given-name" />
+              </Row>
+            </Group>
             {caps.profile ? (
-              <>
+              <Group title="Personal details">
                 <Choice label="Gender" value={v.gender} onChange={(x) => set("gender", x as FormValues["gender"])} options={[{ id: "FEMALE", label: "Female" }, { id: "MALE", label: "Male" }]} />
                 <fieldset>
                   <legend className="field-label">Date of birth</legend>
@@ -234,8 +275,8 @@ export function MemberForm({
                   {v.dobMode === "FULL" && <Text label="Date" type="date" value={v.dobDate} onChange={(x) => set("dobDate", x)} error={errs.dobDate} max={new Date().toISOString().slice(0, 10)} />}
                   {v.dobMode === "YEAR" && <Text label="Year of birth" inputMode="numeric" value={v.dobYear} onChange={(x) => set("dobYear", x.replace(/\D/g, "").slice(0, 4))} error={errs.dobYear} placeholder="e.g. 1978" />}
                 </fieldset>
-                <Text label="Year joined church" inputMode="numeric" value={v.yearJoined} onChange={(x) => set("yearJoined", x.replace(/\D/g, "").slice(0, 4))} error={errs.yearJoined} placeholder="e.g. 1996" />
-              </>
+                <Text label="Year joined this church" inputMode="numeric" value={v.yearJoined} onChange={(x) => set("yearJoined", x.replace(/\D/g, "").slice(0, 4))} error={errs.yearJoined} placeholder="e.g. 1996" />
+              </Group>
             ) : (
               <RestrictedNote />
             )}
@@ -244,12 +285,16 @@ export function MemberForm({
 
         {step === 1 && (
           <>
-            {caps.profile && <Select label="Physical address / zone" value={v.zoneId} onChange={(x) => set("zoneId", x)} options={options.zones} />}
+            {caps.profile && (
+              <Group title="Where they live" hint="Pick the church zone. Use “Outside church area” for members beyond the zones.">
+                <Select label="Physical address / zone" value={v.zoneId} onChange={(x) => set("zoneId", x)} options={options.zones} />
+              </Group>
+            )}
             {caps.contact ? (
-              <>
+              <Group title="How to reach them">
                 <Text label="Phone" type="tel" inputMode="tel" value={v.phone} onChange={(x) => set("phone", x.startsWith("+") ? x : maskUgPhoneInput(x))} error={errs.phone} placeholder="07XX XXX XXX" autoComplete="tel" />
                 <Text label="Email (optional)" type="email" value={v.email} onChange={(x) => set("email", x)} error={errs.email} autoComplete="email" />
-              </>
+              </Group>
             ) : (
               <RestrictedNote />
             )}
@@ -260,7 +305,9 @@ export function MemberForm({
           <>
             {caps.profile &&
               (caps.statusEditable ? (
-                <Select label="Membership status" value={v.status} onChange={(x) => set("status", x)} options={STATUS_KEYS.map((s) => ({ id: s, label: STATUS_META[s].label }))} />
+                <Group title="Membership">
+                  <Select label="Membership status" value={v.status} onChange={(x) => set("status", x)} options={STATUS_KEYS.map((s) => ({ id: s, label: STATUS_META[s].label }))} />
+                </Group>
               ) : (
                 <p className="text-[14px] text-ink-2">
                   Membership status: <strong>{STATUS_META[v.status as keyof typeof STATUS_META]?.label ?? "Not recorded"}</strong>. Status changes go through approval —
@@ -269,12 +316,16 @@ export function MemberForm({
               ))}
             {caps.sensitive ? (
               <>
-                <Select label="Marital status" value={v.maritalStatus} onChange={(x) => set("maritalStatus", x)} options={Object.entries(MARITAL_LABELS).map(([id, label]) => ({ id, label }))} />
-                {v.maritalStatus === "MARRIED" && <SpousePicker v={v} set={set} excludeId={memberId} />}
-                <Row>
-                  <Text label="Next of kin" value={v.nextOfKinName} onChange={(x) => set("nextOfKinName", x)} />
-                  <Text label="Next of kin phone" type="tel" inputMode="tel" value={v.nextOfKinPhone} onChange={(x) => set("nextOfKinPhone", maskUgPhoneInput(x))} error={errs.nextOfKinPhone} placeholder="07XX XXX XXX" />
-                </Row>
+                <Group title="Marriage" restricted>
+                  <Select label="Marital status" value={v.maritalStatus} onChange={(x) => set("maritalStatus", x)} options={Object.entries(MARITAL_LABELS).map(([id, label]) => ({ id, label }))} />
+                  {v.maritalStatus === "MARRIED" && <SpousePicker v={v} set={set} excludeId={memberId} />}
+                </Group>
+                <Group title="Next of kin" hint="Who to contact in an emergency." restricted>
+                  <Row>
+                    <Text label="Name" value={v.nextOfKinName} onChange={(x) => set("nextOfKinName", x)} />
+                    <Text label="Phone" type="tel" inputMode="tel" value={v.nextOfKinPhone} onChange={(x) => set("nextOfKinPhone", maskUgPhoneInput(x))} error={errs.nextOfKinPhone} placeholder="07XX XXX XXX" />
+                  </Row>
+                </Group>
               </>
             ) : (
               <p className="text-[14px] text-ink-2">Marital status, spouse and next of kin are restricted for your role.</p>
@@ -284,9 +335,15 @@ export function MemberForm({
 
         {step === 3 && (
           <>
-            {caps.profile && <Select label="Profession" value={v.professionId} onChange={(x) => set("professionId", x)} options={options.professions} />}
+            {caps.profile && (
+              <Group title="Work">
+                <Select label="Profession" value={v.professionId} onChange={(x) => set("professionId", x)} options={options.professions} />
+              </Group>
+            )}
             {mode === "create" && caps.manageMinistry ? (
-              <MinistryPairs pairs={ministries} setPairs={setMinistries} options={options} />
+              <Group title="Ministries" hint="A member can serve in several ministries, each with a role.">
+                <MinistryPairs pairs={ministries} setPairs={setMinistries} options={options} />
+              </Group>
             ) : mode === "edit" ? (
               <p className="text-[14px] text-ink-2">Add or remove ministries on the profile’s “Ministry & Service” tab.</p>
             ) : null}
@@ -306,9 +363,10 @@ export function MemberForm({
           </p>
         )}
 
-        <div className="flex flex-wrap justify-between gap-2 border-t border-line pt-4">
+        </div>
+        <div className="sticky bottom-[72px] flex flex-wrap items-center justify-between gap-2 border-t border-line bg-surface px-5 py-3 md:bottom-0 md:px-6">
           <button type="button" className="btn btn-secondary" disabled={step === 0} onClick={() => setStep(step - 1)}>
-            Back
+            ← Back
           </button>
           <span className="flex gap-2">
             {mode === "edit" && !last && (
@@ -322,7 +380,7 @@ export function MemberForm({
               </button>
             ) : (
               <button type="submit" className="btn btn-primary">
-                Next
+                Next: {STEPS[step + 1]} →
               </button>
             )}
           </span>
@@ -330,7 +388,8 @@ export function MemberForm({
       </form>
 
       {/* Duplicate panel */}
-      <aside aria-live="polite" className="space-y-3">
+      <aside aria-live="polite" className="space-y-3 lg:col-start-2 xl:col-start-auto xl:sticky xl:top-[88px]">
+        <Summary v={v} options={options} ministries={ministries} mode={mode} />
         {dups.length > 0 && (
           <section className={`card p-4 ${strongDup ? "border-[var(--status-irregular)]" : ""}`}>
             <h2 className="font-semibold">{strongDup ? "Possible duplicate" : "Similar members"}</h2>
@@ -365,6 +424,62 @@ export function MemberForm({
 
 /* ───── field components ───── */
 
+function Group({ title, hint, restricted, children }: { title: string; hint?: string; restricted?: boolean; children: React.ReactNode }) {
+  return (
+    <fieldset className="space-y-4 border-t border-line pt-5 first:border-0 first:pt-0">
+      <legend className="float-left mb-1 w-full">
+        <span className="flex items-center gap-2 text-[15px] font-semibold">
+          {title}
+          {restricted && <span className="rounded bg-surface-2 px-1.5 py-0.5 text-[11px] font-semibold uppercase tracking-wide text-ink-2">Restricted</span>}
+        </span>
+        {hint && <span className="mt-0.5 block text-[13px] font-normal text-ink-2">{hint}</span>}
+      </legend>
+      <div className="clear-both space-y-4">{children}</div>
+    </fieldset>
+  );
+}
+
+/** Live preview of the record being entered, with an estimate of profile completeness. */
+function Summary({ v, options, ministries, mode }: { v: FormValues; options: { zones: Option[]; professions: Option[] }; ministries: { ministryId: string }[]; mode: "create" | "edit" }) {
+  const checks = [
+    v.lastName.trim() && v.firstName.trim(),
+    v.gender,
+    v.dobMode === "FULL" && v.dobDate,
+    v.yearJoined,
+    v.zoneId,
+    v.phone,
+    v.status,
+    v.maritalStatus,
+    v.nextOfKinName && v.nextOfKinPhone,
+    v.professionId,
+    mode === "edit" || ministries.some((m) => m.ministryId),
+    v.maritalStatus !== "MARRIED" || v.spouseMemberId || v.spouseName,
+  ];
+  const pct = Math.round((checks.filter(Boolean).length / checks.length) * 100);
+  const name = `${v.firstName} ${v.lastName}`.trim();
+  const initials = `${v.firstName.trim()[0] ?? ""}${v.lastName.trim()[0] ?? ""}`.toUpperCase();
+  const zone = options.zones.find((z) => z.id === v.zoneId)?.label;
+  return (
+    <section className="card p-4">
+      <div className="flex items-center gap-3">
+        <span aria-hidden className="grid size-11 shrink-0 place-items-center rounded-full bg-primary-soft text-[15px] font-semibold text-primary">{initials || "?"}</span>
+        <span className="min-w-0">
+          <span className="block truncate font-semibold">{name || "New member"}</span>
+          <span className="block truncate text-[13px] text-ink-2">{[zone, v.phone].filter(Boolean).join(" · ") || (mode === "create" ? "ID issued on save" : "")}</span>
+        </span>
+      </div>
+      <div className="mt-4 flex items-baseline justify-between text-[13px]">
+        <span className="text-ink-2">Profile completeness</span>
+        <span className="font-semibold tabular-nums">{pct}%</span>
+      </div>
+      <div className="mt-1.5 h-1.5 rounded-full bg-surface-2" role="progressbar" aria-valuenow={pct} aria-valuemin={0} aria-valuemax={100} aria-label="Profile completeness estimate">
+        <div className={`h-full rounded-full ${pct === 100 ? "bg-ok" : "bg-primary"}`} style={{ width: `${Math.max(pct, 2)}%` }} />
+      </div>
+      <p className="mt-2 text-[12px] text-ink-3">Estimate. A photo, added on the profile after saving, also counts.</p>
+    </section>
+  );
+}
+
 function Row({ children }: { children: React.ReactNode }) {
   return <div className="grid gap-4 sm:grid-cols-2">{children}</div>;
 }
@@ -373,7 +488,10 @@ function Text({ label, value, onChange, error, ...rest }: { label: string; value
   const id = `f-${label.replace(/\W+/g, "-").toLowerCase()}`;
   return (
     <div>
-      <label htmlFor={id} className="field-label">{label}</label>
+      <label htmlFor={id} className="field-label">
+        {label}
+        {rest.required && <span className="text-error" aria-hidden> *</span>}
+      </label>
       <input id={id} className="input" value={value} onChange={(e) => onChange(e.target.value)} aria-invalid={Boolean(error)} aria-describedby={error ? `${id}-err` : undefined} {...rest} />
       {error && <p id={`${id}-err`} className="mt-1 text-[13px] text-error">{error}</p>}
     </div>

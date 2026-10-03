@@ -10,6 +10,9 @@ import { NotFoundError, ValidationError } from "@/server/errors";
 import { IMPORT_FIELD_LABELS, IMPORT_FIELDS } from "@/server/import/columns";
 import { describeBatch, validateBatch } from "@/server/import/wizard";
 
+// Validating and committing ~1,000 rows against a remote database can take a while.
+export const maxDuration = 300;
+
 export const metadata: Metadata = { title: "Import" };
 
 const STEPS = ["Upload", "Map columns", "Validate", "Commit"];

@@ -7,11 +7,11 @@ import { ForbiddenError, NotFoundError, ValidationError } from "../errors";
 import { actorFrom, updateMember } from "../members/service";
 
 export const RELATION_LABELS: Record<HouseholdRelation, string> = {
-  HEAD: "Head of household",
+  HEAD: "Head / cell leader",
   SPOUSE: "Spouse",
   CHILD: "Child",
   DEPENDANT: "Dependant",
-  OTHER: "Other",
+  OTHER: "Cell member",
 };
 
 const LIVE: Prisma.MemberWhereInput = { deletedAt: null, mergedIntoId: null, purgedAt: null };
@@ -103,15 +103,15 @@ export async function addToHousehold(db: Db, ctx: AuthContext, input: z.input<ty
   const v = addInput.parse(input);
   const m = await scopedMember(db, ctx, v.memberId);
   const h = await getHousehold(db, ctx, v.householdId);
-  if (h.members.some((x) => x.memberId === m.id)) throw new ValidationError("Already in this household.");
-  if (v.relation === "HEAD" && h.members.some((x) => x.relation === "HEAD")) throw new ValidationError("This household already has a head.");
+  if (h.members.some((x) => x.memberId === m.id)) throw new ValidationError("Already in this family or cell.");
+  if (v.relation === "HEAD" && h.members.some((x) => x.relation === "HEAD")) throw new ValidationError("This family or cell already has a head.");
   await db.$transaction(async (tx) => {
     await tx.householdMember.create({ data: { householdId: h.id, memberId: m.id, relation: v.relation } });
     await new AuditWriter(tx, actorFrom(ctx), "UI").log({ action: "CREATE", entity: "Household", entityId: h.id, memberId: m.id, field: "household", newValue: `${h.name} · ${RELATION_LABELS[v.relation]}` });
   });
   if (v.relation === "SPOUSE" && v.linkSpouse) {
     const head = h.members.find((x) => x.relation === "HEAD")?.member;
-    if (!head) throw new ValidationError("Add a head of household first to link spouses.");
+    if (!head) throw new ValidationError("Add a head first to link spouses.");
     await updateMember(db, ctx, m.id, { maritalStatus: "MARRIED", spouseMemberId: head.id }, { note: `Linked as spouse in household ${h.name}` });
     await updateMember(db, ctx, head.id, { maritalStatus: "MARRIED", spouseMemberId: m.id }, { note: `Linked as spouse in household ${h.name}` });
   }
@@ -122,7 +122,7 @@ export async function setHouseholdRelation(db: Db, ctx: AuthContext, householdId
   const h = await getHousehold(db, ctx, householdId);
   const row = h.members.find((x) => x.memberId === memberId);
   if (!row) throw new NotFoundError();
-  if (relation === "HEAD" && h.members.some((x) => x.relation === "HEAD" && x.memberId !== memberId)) throw new ValidationError("This household already has a head.");
+  if (relation === "HEAD" && h.members.some((x) => x.relation === "HEAD" && x.memberId !== memberId)) throw new ValidationError("This family or cell already has a head.");
   await db.$transaction(async (tx) => {
     await tx.householdMember.update({ where: { householdId_memberId: { householdId, memberId } }, data: { relation } });
     await new AuditWriter(tx, actorFrom(ctx), "UI").log({ action: "UPDATE", entity: "Household", entityId: h.id, memberId, field: "household", oldValue: `${h.name} · ${RELATION_LABELS[row.relation]}`, newValue: `${h.name} · ${RELATION_LABELS[relation]}` });

@@ -12,7 +12,7 @@ import { db } from "@/server/db";
 import { ForbiddenError, NotFoundError } from "@/server/errors";
 import { RELATION_LABELS, getHousehold } from "@/server/households/service";
 
-export const metadata: Metadata = { title: "Household" };
+export const metadata: Metadata = { title: "Family / cell" };
 
 export default async function HouseholdPage({ params }: { params: Promise<{ id: string }> }) {
   const ctx = await requirePermission("household", "read");
@@ -31,7 +31,7 @@ export default async function HouseholdPage({ params }: { params: Promise<{ id: 
     <>
       <TopBar />
       <main className="p-4 md:p-7">
-        <nav aria-label="Breadcrumb" className="mb-3 text-[14px] text-ink-2"><Link href="/families" className="hover:underline">Families</Link> / {h.name}</nav>
+        <nav aria-label="Breadcrumb" className="mb-3 text-[14px] text-ink-2"><Link href="/families" className="hover:underline">Families / Cells</Link> / {h.name}</nav>
         <PageHeader title={h.name} subtitle={`${h.members.length} member${h.members.length === 1 ? "" : "s"}`} />
         <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_340px]">
           <section className="card overflow-x-auto">
@@ -73,7 +73,7 @@ export default async function HouseholdPage({ params }: { params: Promise<{ id: 
           </section>
           {canEdit && (
             <aside className="card h-fit p-5">
-              <h2 className="mb-3 text-[17px] font-semibold">Add to household</h2>
+              <h2 className="mb-3 text-[17px] font-semibold">Add a member</h2>
               <AddHouseholdMember householdId={h.id} hasHead={Boolean(head)} />
             </aside>
           )}

@@ -14,7 +14,7 @@ async function loadMember(db: Db, id: string) {
 
 function validate(file: { data: Buffer; name: string }, imagesOnly: boolean) {
   if (file.data.length === 0) throw new ValidationError("The file is empty.");
-  if (file.data.length > MAX_UPLOAD_BYTES) throw new ValidationError("Files must be 8 MB or smaller.");
+  if (file.data.length > MAX_UPLOAD_BYTES) throw new ValidationError("Files must be 4 MB or smaller.");
   const type = sniffType(file.data);
   if (!type || !ALLOWED_UPLOAD_TYPES.has(type) || (imagesOnly && !type.startsWith("image/"))) {
     throw new ValidationError(imagesOnly ? "Upload a JPEG, PNG or WebP photo." : "Upload a PDF, JPEG, PNG or WebP file.");

@@ -367,9 +367,9 @@ function FamilyTab({ m, caps }: { m: M; caps: MemberProfile["caps"] }) {
 
 function HouseholdSection({ households, memberId, canEdit }: { households: Awaited<ReturnType<typeof householdsOfMember>>; memberId: string; canEdit: boolean }) {
   return (
-    <Section title="Household" action={canEdit && households.length === 0 ? <Link href="/families" className="text-[14px] font-semibold text-primary">Add to a household</Link> : undefined}>
+    <Section title="Family / cell" action={canEdit && households.length === 0 ? <Link href="/families" className="text-[14px] font-semibold text-primary">Add to a family or cell</Link> : undefined}>
       {households.length === 0 ? (
-        <p className="p-5 text-ink-2">Not part of a household yet.</p>
+        <p className="p-5 text-ink-2">Not in a family or cell yet.</p>
       ) : (
         households.map((hm) => (
           <div key={hm.householdId} className="p-5">

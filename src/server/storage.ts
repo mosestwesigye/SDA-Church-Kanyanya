@@ -17,7 +17,8 @@ export interface Storage {
 const MIME_BY_EXT: Record<string, string> = { jpg: "image/jpeg", jpeg: "image/jpeg", png: "image/png", webp: "image/webp", pdf: "application/pdf" };
 
 export const ALLOWED_UPLOAD_TYPES = new Set(["image/jpeg", "image/png", "image/webp", "application/pdf"]);
-export const MAX_UPLOAD_BYTES = 8 * 1024 * 1024;
+/** Vercel functions accept request bodies up to 4.5 MB; keep uploads under that. */
+export const MAX_UPLOAD_BYTES = 4 * 1024 * 1024;
 
 function safeName(fileName: string) {
   const ext = fileName.split(".").pop()?.toLowerCase().replace(/[^a-z0-9]/g, "") || "bin";
@@ -71,7 +72,14 @@ class BlobStorage implements Storage {
 
 let instance: Storage | null = null;
 export function storage(): Storage {
-  instance ??= process.env.BLOB_READ_WRITE_TOKEN ? new BlobStorage() : new LocalStorage();
+  if (instance) return instance;
+  // Blob stores connected through the Vercel dashboard authenticate with OIDC
+  // (BLOB_STORE_ID + the runtime's VERCEL_OIDC_TOKEN); older ones use a token.
+  if (process.env.BLOB_READ_WRITE_TOKEN || process.env.BLOB_STORE_ID) instance = new BlobStorage();
+  else if (process.env.VERCEL) {
+    // Vercel's disk is read-only: fail with a clear message instead of an EROFS error.
+    throw new Error("File storage is not configured. Connect a Vercel Blob store to this project (Storage → Blob) and redeploy.");
+  } else instance = new LocalStorage();
   return instance;
 }
 
