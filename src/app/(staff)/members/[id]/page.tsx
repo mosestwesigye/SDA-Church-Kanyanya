@@ -12,6 +12,7 @@ import { can } from "@/server/authz/policy";
 import { db } from "@/server/db";
 import { getMemberProfile, type MemberProfile, type ProfileTab } from "@/server/members/profile";
 import { retentionDays } from "@/server/workflows/status";
+import { RELATION_LABELS, householdsOfMember } from "@/server/households/service";
 
 export const metadata: Metadata = { title: "Member" };
 
@@ -154,6 +155,7 @@ export default async function MemberPage({ params, searchParams }: { params: Pro
           <div className="min-w-0 space-y-4">
             {tab === "personal" && <PersonalTab m={m} caps={caps} dob={dob} phone={phone} />}
             {tab === "family" && <FamilyTab m={m} caps={caps} />}
+            {tab === "family" && caps.sensitive && <HouseholdSection households={await householdsOfMember(db, ctx, m.id)} memberId={m.id} canEdit={can(ctx, "household", "update")} />}
             {tab === "ministry" && (
               <>
                 <Section title="Ministries and roles">
@@ -360,6 +362,31 @@ function FamilyTab({ m, caps }: { m: M; caps: MemberProfile["caps"] }) {
         </Grid>
       </Section>
     </>
+  );
+}
+
+function HouseholdSection({ households, memberId, canEdit }: { households: Awaited<ReturnType<typeof householdsOfMember>>; memberId: string; canEdit: boolean }) {
+  return (
+    <Section title="Household" action={canEdit && households.length === 0 ? <Link href="/families" className="text-[14px] font-semibold text-primary">Add to a household</Link> : undefined}>
+      {households.length === 0 ? (
+        <p className="p-5 text-ink-2">Not part of a household yet.</p>
+      ) : (
+        households.map((hm) => (
+          <div key={hm.householdId} className="p-5">
+            <Link href={`/families/${hm.householdId}`} className="font-semibold text-primary hover:underline">{hm.household.name}</Link>
+            <span className="text-ink-2"> · {RELATION_LABELS[hm.relation]}</span>
+            <ul className="mt-2 space-y-1 text-[15px]">
+              {hm.household.members.filter((x) => x.memberId !== memberId).map((x) => (
+                <li key={x.memberId}>
+                  <Link className="hover:underline" href={`/members/${x.member.id}?tab=family`}>{x.member.firstName} {x.member.lastName}</Link>
+                  <span className="text-ink-2"> · {RELATION_LABELS[x.relation]}</span>
+                </li>
+              ))}
+            </ul>
+          </div>
+        ))
+      )}
+    </Section>
   );
 }
 
