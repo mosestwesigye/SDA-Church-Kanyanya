@@ -5,7 +5,7 @@ import { AuditWriter, type Actor } from "../audit/audit";
 import type { Db, Tx } from "../db";
 import { refreshCompleteness } from "../members/service";
 import { getCompletenessRules } from "../settings/rules";
-import type { CompletenessRules } from "@/lib/completeness";
+import { computeCompleteness, type CompletenessRules } from "@/lib/completeness";
 import { detectColumns, extractRecords, type ColumnMap, type RawRecord } from "./columns";
 import { normalizeRow, type Issue, type Lookups, type NormalizedRow } from "./normalize-row";
 import { readWorkbook, type SheetRows } from "./read-xlsx";
@@ -217,54 +217,73 @@ function gapFill(existing: Record<string, unknown>, incoming: ReturnType<typeof 
 
 export type CommitTotals = { created: number; updated: number; unchanged: number; skipped: number; errors: number };
 
+const ACTION_TOTAL: Record<string, keyof CommitTotals> = { CREATE: "created", UPDATE: "updated", UNCHANGED: "unchanged", SKIP: "skipped", ERROR: "errors" };
+
 /**
  * Write a prepared import. Idempotent: rows are matched on Member ID (or, for
  * rows without an ID, on the same file + row number from an earlier run), and
  * existing records only have empty fields filled.
+ *
+ * Resumable: every row is logged in ImportRow as it is written, so a run that
+ * stops (deadline reached, timeout, lost connection) continues where it left
+ * off when called again with the same batchId. Pass `deadline` (epoch ms) to
+ * stop cleanly before a serverless time limit; the result says whether all
+ * rows are done.
  */
-export async function commitImport(db: Db, actor: Actor, prepared: PreparedImport, opts: { chunkSize?: number; batchId?: string } = {}) {
+export async function commitImport(db: Db, actor: Actor, prepared: PreparedImport, opts: { chunkSize?: number; batchId?: string; deadline?: number } = {}) {
   const batchData = {
     fileName: prepared.fileName,
     fileHash: prepared.fileHash,
     sheetName: prepared.sheetName,
     headerRow: prepared.headerRow,
     columnMap: prepared.columnMap as Prisma.InputJsonValue,
-    status: "VALIDATED" as const,
   };
-  const batch = opts.batchId
-    ? await db.importBatch.update({ where: { id: opts.batchId }, data: batchData })
-    : await db.importBatch.create({ data: { ...batchData, createdById: actor.userId } });
-  if (opts.batchId && (await db.importRow.count({ where: { batchId: batch.id } })) > 0) {
-    throw new ValidationError("This import was already committed.");
-  }
-  const totals: CommitTotals = { created: 0, updated: 0, unchanged: 0, skipped: 0, errors: 0 };
+  let batch = opts.batchId
+    ? await db.importBatch.findUniqueOrThrow({ where: { id: opts.batchId } })
+    : await db.importBatch.create({ data: { ...batchData, status: "VALIDATED", createdById: actor.userId } });
+  if (batch.status === "COMMITTED") throw new ValidationError("This import was already committed.");
+  if (opts.batchId) batch = await db.importBatch.update({ where: { id: batch.id }, data: { ...batchData, status: "VALIDATED" } });
+
+  const done = new Set((await db.importRow.findMany({ where: { batchId: batch.id }, select: { rowNumber: true } })).map((r) => r.rowNumber));
   const rules = await getCompletenessRules(db);
-  const chunkSize = opts.chunkSize ?? 50;
+  const chunkSize = opts.chunkSize ?? 25;
 
   // Rows that carry a Member ID go first, so rows without one are issued
   // numbers above every ID in the file and can never take a number the file uses.
   const ordered = [
     ...prepared.rows.filter((r) => r.normalized.memberNo !== null),
     ...prepared.rows.filter((r) => r.normalized.memberNo === null),
-  ];
+  ].filter((r) => !done.has(r.rowNumber));
+
+  let processed = 0;
   for (let i = 0; i < ordered.length; i += chunkSize) {
+    // Always write at least one chunk per call so every round makes progress.
+    if (i > 0 && opts.deadline && Date.now() > opts.deadline) break;
     const chunk = ordered.slice(i, i + chunkSize);
     await db.$transaction(
       async (tx) => {
         const audit = new AuditWriter(tx, actor, "IMPORT", batch.id);
-        for (const row of chunk) {
-          const result = await commitRow(tx, audit, prepared, batch.id, row, rules);
-          totals[result]++;
-        }
+        for (const row of chunk) await commitRow(tx, audit, prepared, batch.id, row, rules);
       },
       { timeout: 60_000, maxWait: 10_000 },
     );
+    processed += chunk.length;
   }
 
-  return db.importBatch.update({
+  const total = prepared.rows.length;
+  const recorded = await db.importRow.groupBy({ by: ["action"], where: { batchId: batch.id }, _count: true });
+  const totals: CommitTotals = { created: 0, updated: 0, unchanged: 0, skipped: 0, errors: 0 };
+  for (const r of recorded) if (r.action) totals[ACTION_TOTAL[r.action]!] += r._count;
+  const written = recorded.reduce((n, r) => n + r._count, 0);
+  const complete = written >= total;
+
+  const saved = await db.importBatch.update({
     where: { id: batch.id },
-    data: { status: "COMMITTED", committedAt: new Date(), totals: totals as Prisma.InputJsonValue },
+    data: complete
+      ? { status: "COMMITTED", committedAt: new Date(), totals: totals as Prisma.InputJsonValue }
+      : { totals: { ...totals, inProgress: true, written, total } as Prisma.InputJsonValue },
   });
+  return { ...saved, done: complete, processed, written, total, totals };
 }
 
 async function commitRow(
@@ -326,10 +345,14 @@ async function commitRow(
   const cols = toDbColumns(n.columns);
 
   if (!existing) {
+    // New record: completeness is computed here instead of re-reading the row (saves two round trips).
+    const score = computeCompleteness({ ...cols, photoKey: null, spouseMemberId: null, ministryCount: new Set(n.ministries.map((l) => l.ministryId)).size }, rules);
     const m = await tx.member.create({
       data: {
         ...(n.memberNo !== null ? { memberNo: n.memberNo } : {}),
         ...cols,
+        completeness: score.percent,
+        missingFields: score.missing,
         ministries: n.ministries.length ? { createMany: { data: n.ministries, skipDuplicates: true } } : undefined,
       },
     });
@@ -339,7 +362,6 @@ async function commitRow(
         skipDuplicates: true,
       });
     }
-    await refreshCompleteness(tx, m.id, rules);
     await audit.log({ action: "CREATE", entity: "Member", entityId: m.id, memberId: m.id, newValue: { memberId: m.memberId, ...n.columns }, note: where });
     await record("CREATE", m.id);
     return "created";

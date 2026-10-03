@@ -4,6 +4,7 @@ import { RevokeSession } from "@/components/admin/session-widgets";
 import { ROLE_LABELS, type RoleKey } from "@/server/authz/catalog";
 import { SESSION_IDLE_MINUTES } from "@/server/auth/auth";
 import { requirePermission } from "@/server/auth/session";
+import { regionCheck } from "@/server/admin/regions";
 import { db } from "@/server/db";
 
 export const metadata: Metadata = { title: "Security · Admin" };
@@ -71,6 +72,7 @@ export default async function SecurityPage() {
         </section>
       </div>
       <aside className="space-y-5">
+        <RegionCard />
         <section className="card p-5">
           <h2 className="text-[17px] font-semibold">Two-step verification</h2>
           <p className="mb-2 mt-1 text-[14px] text-ink-2">Roles that must use an authenticator app. Members sign in with an SMS code instead.</p>
@@ -85,5 +87,26 @@ export default async function SecurityPage() {
         </section>
       </aside>
     </div>
+  );
+}
+
+function RegionCard() {
+  const r = regionCheck();
+  if (!r.app && !r.database) return null;
+  return (
+    <section className={`card p-5 ${r.mismatch ? "border-[var(--status-irregular)]" : ""}`}>
+      <h2 className="text-[17px] font-semibold">Speed check</h2>
+      <dl className="mt-2 space-y-1 text-[14px]">
+        <div className="flex justify-between"><dt className="text-ink-2">App runs in</dt><dd className="mono">{r.app ?? "—"}</dd></div>
+        <div className="flex justify-between"><dt className="text-ink-2">Database is in</dt><dd className="mono">{r.database ?? "—"}</dd></div>
+      </dl>
+      {r.mismatch ? (
+        <p className="mt-3 text-[14px]">
+          These are far apart, which makes every page and import slower. In <strong>vercel.json</strong> set <span className="mono">&quot;regions&quot;: [&quot;{r.expected}&quot;]</span> (ask your developer), then redeploy.
+        </p>
+      ) : (
+        <p className="mt-3 text-[14px] text-ink-2">The app and database are close together.</p>
+      )}
+    </section>
   );
 }

@@ -63,7 +63,7 @@ export default async function ImportPage() {
                         </td>
                         <td className="px-4 py-2.5">{b.createdById ? (users.get(b.createdById) ?? "—") : "System"}</td>
                         <td className="px-4 py-2.5 whitespace-nowrap">{formatDateTime(b.committedAt ?? b.createdAt)}</td>
-                        <td className="px-4 py-2.5">{b.status === "COMMITTED" ? "Committed" : b.status === "VALIDATED" ? "Validated, not committed" : "Uploaded"}</td>
+                        <td className="px-4 py-2.5">{b.status === "COMMITTED" ? "Committed" : t.inProgress ? `Partly imported (${t.written ?? 0} of ${t.total ?? "?"}) — open to continue` : b.status === "VALIDATED" ? "Validated, not committed" : "Uploaded"}</td>
                         <td className="px-4 py-2.5 text-ink-2">
                           {b.status === "COMMITTED" ? `${t.created ?? 0} created · ${t.updated ?? 0} updated · ${t.unchanged ?? 0} unchanged · ${(t.skipped ?? 0) + (t.errors ?? 0)} skipped` : "—"}
                         </td>

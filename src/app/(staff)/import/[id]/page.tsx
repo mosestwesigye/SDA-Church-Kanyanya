@@ -8,7 +8,7 @@ import { requirePermission } from "@/server/auth/session";
 import { db } from "@/server/db";
 import { NotFoundError, ValidationError } from "@/server/errors";
 import { IMPORT_FIELD_LABELS, IMPORT_FIELDS } from "@/server/import/columns";
-import { describeBatch, validateBatch } from "@/server/import/wizard";
+import { describeBatch, validateBatch, writtenRows } from "@/server/import/wizard";
 
 // Validating and committing ~1,000 rows against a remote database can take a while.
 export const maxDuration = 300;
@@ -239,7 +239,7 @@ export default async function ImportBatchPage({ params, searchParams }: { params
         <section className="card p-5 max-w-2xl">
           <h2 className="text-[17px] font-semibold mb-1">Commit</h2>
           <p className="text-ink-2 mb-4 text-[14px]">Every change is written to the audit log with source “import” and the spreadsheet row number. You can run the same file again later — nothing will be duplicated.</p>
-          <CommitButtons batchId={id} errorRows={errorRows} total={prepared.summary.rows} />
+          <CommitButtons batchId={id} errorRows={errorRows} total={prepared.summary.rows} alreadyWritten={await writtenRows(db, id)} />
         </section>
       </main>
     </>

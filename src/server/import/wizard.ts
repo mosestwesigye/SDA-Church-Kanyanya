@@ -93,7 +93,10 @@ export async function validateBatch(db: Db, ctx: AuthContext, batchId: string) {
   const preview = await previewActions(db, prepared);
   const actions = preview.reduce<Record<string, number>>((acc, p) => ((acc[p.action] = (acc[p.action] ?? 0) + 1), acc), {});
   if (batch.status !== "COMMITTED") {
-    await db.importBatch.update({ where: { id: batch.id }, data: { status: "VALIDATED", totals: { preview: actions, ...prepared.summary } as Prisma.InputJsonValue } });
+    // Keep the "partly imported" progress marker if a commit already started.
+    const prev = (batch.totals ?? {}) as Record<string, unknown>;
+    const progress = prev.inProgress ? { inProgress: true, written: prev.written, total: prev.total } : {};
+    await db.importBatch.update({ where: { id: batch.id }, data: { status: "VALIDATED", totals: { preview: actions, ...prepared.summary, ...progress } as Prisma.InputJsonValue } });
   }
   return { batch, prepared, preview, actions };
 }
@@ -112,4 +115,34 @@ export async function commitBatchSkippingErrors(db: Db, ctx: AuthContext, batchI
   const { batch, prepared } = await validateBatch(db, ctx, batchId);
   if (batch.status === "COMMITTED") throw new ValidationError("This import was already committed.");
   return commitImport(db, actorFrom(ctx), prepared, { batchId: batch.id });
+}
+
+/**
+ * Commit in rounds that fit a serverless time limit. Each call writes rows
+ * for about `budgetMs`, then returns progress; call again until `done`.
+ * A batch that stopped part-way (e.g. timed out) continues where it left off.
+ */
+export async function commitStep(db: Db, ctx: AuthContext, batchId: string, opts: { skipErrors: boolean; budgetMs?: number }) {
+  const started = Date.now();
+  const batch = await loadBatch(db, ctx, batchId);
+  if (batch.status === "COMMITTED") {
+    const n = await db.importRow.count({ where: { batchId } });
+    return { done: true, written: n, total: n };
+  }
+  const prepared = await prepareImport(db, { name: batch.fileName, data: await readStored(batch.storageKey!) }, {
+    sheetName: batch.sheetName,
+    headerRow: batch.headerRow,
+    columnMap: batch.columnMap as ColumnMap,
+  });
+  if (!opts.skipErrors) {
+    const blocking = prepared.rows.filter((r) => r.normalized.issues.some((i) => i.severity === "error") && !r.normalized.skip).length;
+    if (blocking) throw new ValidationError(`${blocking} row${blocking === 1 ? " has" : "s have"} errors. Fix them in the spreadsheet and upload it again, or they will be skipped.`);
+  }
+  const res = await commitImport(db, actorFrom(ctx), prepared, { batchId: batch.id, deadline: started + (opts.budgetMs ?? 40_000) });
+  return { done: res.done, written: res.written, total: res.total };
+}
+
+/** Rows already written for a batch that hasn't finished (0 when not started). */
+export async function writtenRows(db: Db, batchId: string) {
+  return db.importRow.count({ where: { batchId } });
 }

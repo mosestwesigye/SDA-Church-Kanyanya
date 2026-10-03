@@ -1,7 +1,8 @@
 "use client";
 
+import { useRouter } from "next/navigation";
 import { useActionState, useMemo, useState, useTransition } from "react";
-import { commitAction, saveMappingAction, uploadAction } from "@/app/(staff)/import/actions";
+import { commitStepAction, saveMappingAction, uploadAction } from "@/app/(staff)/import/actions";
 import { SubmitButton } from "@/components/ui/form";
 
 type Result = { ok: boolean; error?: string } | undefined;
@@ -134,25 +135,74 @@ export function MappingForm({
   );
 }
 
-export function CommitButtons({ batchId, errorRows, total }: { batchId: string; errorRows: number; total: number }) {
-  const [pending, start] = useTransition();
+export function CommitButtons({ batchId, errorRows, total, alreadyWritten = 0 }: { batchId: string; errorRows: number; total: number; alreadyWritten?: number }) {
+  const router = useRouter();
+  const [running, setRunning] = useState(false);
+  const [progress, setProgress] = useState<{ written: number; total: number } | null>(alreadyWritten ? { written: alreadyWritten, total } : null);
   const [error, setError] = useState<string | null>(null);
   const [confirmSkip, setConfirmSkip] = useState(false);
-  const commit = (skip: boolean) =>
-    start(async () => {
-      const r = await commitAction(batchId, skip);
-      if (r && !r.ok) setError(r.error);
-    });
+  const resuming = alreadyWritten > 0;
+
+  // Commit in rounds (each well inside the server's time limit) until every row is written.
+  const commit = async (skip: boolean) => {
+    setRunning(true);
+    setError(null);
+    try {
+      for (let round = 0; round < 200; round++) {
+        let r;
+        try {
+          r = await commitStepAction(batchId, skip);
+        } catch {
+          setError("The connection dropped. Nothing is lost — press Continue to carry on from where it stopped.");
+          return;
+        }
+        if (!r.ok) {
+          setError(r.error);
+          return;
+        }
+        setProgress({ written: r.data!.written, total: r.data!.total });
+        if (r.data!.done) {
+          router.push(`/import/${batchId}`);
+          router.refresh();
+          return;
+        }
+      }
+    } finally {
+      setRunning(false);
+    }
+  };
+  const pct = progress ? Math.round((progress.written / Math.max(progress.total, 1)) * 100) : 0;
   return (
     <div className="space-y-3">
-      {errorRows > 0 && (
+      {resuming && !running && (
+        <p className="rounded-[6px] bg-primary-soft px-3 py-2 text-[14px] text-primary">
+          This import stopped part-way: {alreadyWritten.toLocaleString("en-UG")} of {total.toLocaleString("en-UG")} rows are already in. Continue to add the rest — rows already imported are not repeated.
+        </p>
+      )}
+      {errorRows > 0 && !resuming && (
         <label className="flex min-h-[44px] items-start gap-2 text-[14px]">
           <input type="checkbox" className="mt-1 size-4" checked={confirmSkip} onChange={(e) => setConfirmSkip(e.target.checked)} />
           Import the other {total - errorRows} rows and skip the {errorRows} row{errorRows === 1 ? "" : "s"} with errors (they’re listed in the import log)
         </label>
       )}
-      <button type="button" className="btn btn-primary" disabled={pending || (errorRows > 0 && !confirmSkip)} onClick={() => commit(errorRows > 0)}>
-        {pending ? "Importing… this can take a minute" : "Commit import"}
+      {progress && (running || progress.written > 0) && (
+        <div aria-live="polite">
+          <div className="flex justify-between text-[13px] text-ink-2">
+            <span>{running ? "Importing — keep this page open…" : "Progress"}</span>
+            <span className="tabular-nums">{progress.written.toLocaleString("en-UG")} of {progress.total.toLocaleString("en-UG")} rows</span>
+          </div>
+          <div className="mt-1.5 h-2 rounded-full bg-surface-2" role="progressbar" aria-valuenow={pct} aria-valuemin={0} aria-valuemax={100} aria-label="Import progress">
+            <div className="h-full rounded-full bg-primary transition-all" style={{ width: `${Math.max(pct, 2)}%` }} />
+          </div>
+        </div>
+      )}
+      <button
+        type="button"
+        className="btn btn-primary"
+        disabled={running || (errorRows > 0 && !confirmSkip && !resuming)}
+        onClick={() => commit(errorRows > 0)}
+      >
+        {running ? "Importing…" : resuming || error ? "Continue import" : "Commit import"}
       </button>
       {error && <p role="alert" className="rounded-[6px] bg-error-soft px-3 py-2 text-[14px] text-error">{error}</p>}
     </div>

@@ -6,7 +6,7 @@ import { attempt } from "@/server/action-result";
 import { requirePermission } from "@/server/auth/session";
 import { db } from "@/server/db";
 import { ValidationError } from "@/server/errors";
-import { commitBatch, commitBatchSkippingErrors, saveMapping, startImport, type mappingSchema } from "@/server/import/wizard";
+import { commitBatch, commitBatchSkippingErrors, commitStep, saveMapping, startImport, type mappingSchema } from "@/server/import/wizard";
 import type { z } from "zod";
 
 export async function uploadAction(_: unknown, form: FormData) {
@@ -40,5 +40,16 @@ export async function commitAction(batchId: string, skipErrors: boolean) {
     revalidatePath("/members");
     redirect(`/import/${batchId}`);
   }
+  return r;
+}
+
+/** One round of a commit (about 40 seconds of writing); the page calls it until done. */
+export async function commitStepAction(batchId: string, skipErrors: boolean) {
+  const ctx = await requirePermission("import", "run");
+  const r = await attempt<{ done: boolean; written: number; total: number }>(async () => {
+    const data = await commitStep(db, ctx, batchId, { skipErrors });
+    return { data };
+  });
+  if (r.ok && r.data?.done) revalidatePath("/members");
   return r;
 }

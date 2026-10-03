@@ -2,7 +2,7 @@ import ExcelJS from "exceljs";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import type { Db } from "@/server/db";
 import { ForbiddenError, ValidationError } from "@/server/errors";
-import { commitBatch, commitBatchSkippingErrors, describeBatch, saveMapping, startImport, validateBatch } from "@/server/import/wizard";
+import { commitBatch, commitBatchSkippingErrors, commitStep, describeBatch, saveMapping, startImport, validateBatch, writtenRows } from "@/server/import/wizard";
 import { testDb, userWith } from "./helpers";
 
 let db: Db;
@@ -97,4 +97,39 @@ describe("import wizard", () => {
     expect(v.prepared.rows[0].normalized.columns).toMatchObject({ lastName: "Kintu", firstName: "Moses" });
     expect(v.prepared.rows[0].normalized.memberNo).toBe(BASE + 50);
   });
+
+  it("commits in rounds that stop at a deadline and resume without repeating rows", async () => {
+    const rows = Array.from({ length: 60 }, (_, i) => [id(100 + i), "Roundtest", `Member${i}`, i % 2 ? "Male" : "Female", null, "Kanyanya", null, null]);
+    const { batch } = await startImport(db, clerk, { name: "big.xlsx", data: await workbook(rows) });
+    await validateBatch(db, clerk, batch.id);
+
+    // A zero budget writes one chunk and stops (as if the server time limit hit).
+    const first = await commitStep(db, clerk, batch.id, { skipErrors: false, budgetMs: 0 });
+    expect(first.done).toBe(false);
+    expect(first.written).toBeGreaterThan(0);
+    expect(first.written).toBeLessThan(60);
+    expect(await writtenRows(db, batch.id)).toBe(first.written);
+    expect((await db.importBatch.findUniqueOrThrow({ where: { id: batch.id } })).status).toBe("VALIDATED");
+
+    // Re-validating mid-way only reports the remaining rows as new.
+    const mid = await validateBatch(db, clerk, batch.id);
+    expect(mid.actions.CREATE).toBe(60 - first.written);
+
+    let last = first;
+    for (let i = 0; i < 10 && !last.done; i++) last = await commitStep(db, clerk, batch.id, { skipErrors: false });
+    expect(last).toMatchObject({ done: true, written: 60, total: 60 });
+    const nos = Array.from({ length: 60 }, (_, i) => BASE + 100 + i);
+    expect(await db.member.count({ where: { memberNo: { in: nos } } })).toBe(60);
+    const done = await db.importBatch.findUniqueOrThrow({ where: { id: batch.id } });
+    expect(done.status).toBe("COMMITTED");
+    expect(done.totals).toMatchObject({ created: 60 });
+    // Completeness was computed for new rows without a re-read.
+    expect((await db.member.findFirstOrThrow({ where: { memberNo: BASE + 100 } })).missingFields.length).toBeGreaterThan(0);
+
+    // Uploading the same file again adds nothing new.
+    const again = await startImport(db, clerk, { name: "big.xlsx", data: await workbook(rows) });
+    const v2 = await validateBatch(db, clerk, again.batch.id);
+    expect(v2.actions.CREATE ?? 0).toBe(0);
+  });
 });
+
