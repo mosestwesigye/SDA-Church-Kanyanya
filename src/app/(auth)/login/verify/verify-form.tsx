@@ -4,9 +4,11 @@ import { useActionState, useState } from "react";
 import { AuthAlert } from "@/components/auth/auth-ui";
 import { SubmitButton } from "@/components/ui/form";
 import { verifyTotpAction } from "../../actions";
+import { useToastState } from "@/components/ui/use-toast-state";
 
 export function VerifyForm({ next }: { next: string }) {
   const [state, action] = useActionState(verifyTotpAction, undefined);
+  useToastState(state);
   const [backup, setBackup] = useState(false);
   return (
     <form action={action} className="space-y-5">

@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { PrivacyNotice } from "@/components/members/directory-client";
 import { Dialog } from "@/components/ui/dialog";
+import { toast } from "@/lib/toast";
 
 export function PrintButton() {
   return (
@@ -29,7 +30,7 @@ export function DownloadReport({ reportKey, search, title }: { reportKey: string
         footer={
           <>
             <button type="button" className="btn btn-secondary" onClick={close}>Cancel</button>
-            <form method="post" action={`/api/reports/${reportKey}${search}`} onSubmit={() => setTimeout(close, 300)}>
+            <form method="post" action={`/api/reports/${reportKey}${search}`} onSubmit={() => { toast.info("Preparing your download…", { description: "It will save to your device in a moment. The download is logged." }); setTimeout(close, 300); }}>
               <input type="hidden" name="format" value={format} />
               <input type="hidden" name="ack" value="1" />
               <button className="btn btn-primary">I understand — download</button>

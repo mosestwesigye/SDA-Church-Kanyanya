@@ -7,6 +7,7 @@ import { attempt } from "@/server/action-result";
 import { requireContext } from "@/server/auth/session";
 import { db } from "@/server/db";
 import { addToHousehold, createHousehold, removeFromHousehold, setHouseholdRelation } from "@/server/households/service";
+import { flash } from "@/server/flash";
 
 export async function createHouseholdAction(name: string, headMemberId?: string) {
   const r = await attempt<{ id: string }>(async () => {
@@ -14,7 +15,10 @@ export async function createHouseholdAction(name: string, headMemberId?: string)
     const h = await createHousehold(db, ctx, { name, headMemberId });
     return { data: { id: h.id } };
   });
-  if (r.ok) redirect(`/families/${r.data!.id}`);
+  if (r.ok) {
+    await flash("success", "Family / cell created", "Add its members below.");
+    redirect(`/families/${r.data!.id}`);
+  }
   return r;
 }
 

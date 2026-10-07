@@ -4,11 +4,14 @@ import { useRouter } from "next/navigation";
 import { useActionState, useMemo, useState, useTransition } from "react";
 import { commitStepAction, saveMappingAction, uploadAction } from "@/app/(staff)/import/actions";
 import { SubmitButton } from "@/components/ui/form";
+import { toast } from "@/lib/toast";
+import { useToastState } from "@/components/ui/use-toast-state";
 
 type Result = { ok: boolean; error?: string } | undefined;
 
 export function UploadForm() {
   const [state, action] = useActionState<Result, FormData>(uploadAction as never, undefined);
+  useToastState(state && !state.ok ? { error: state.error } : undefined);
   return (
     <form action={action} className="space-y-4">
       <div>
@@ -66,7 +69,10 @@ export function MappingForm({
         setError(null);
         start(async () => {
           const r = await saveMappingAction(batchId, { sheetName, headerRow, columnMap: map as never });
-          if (r && !r.ok) setError(r.error);
+          if (r && !r.ok) {
+            setError(r.error);
+            toast.error(r.error);
+          }
         });
       }}
     >
@@ -154,14 +160,17 @@ export function CommitButtons({ batchId, errorRows, total, alreadyWritten = 0 }:
           r = await commitStepAction(batchId, skip);
         } catch {
           setError("The connection dropped. Nothing is lost — press Continue to carry on from where it stopped.");
+          toast.warning("Import paused", { description: "The connection dropped. Press Continue to carry on from where it stopped." });
           return;
         }
         if (!r.ok) {
           setError(r.error);
+          toast.error(r.error);
           return;
         }
         setProgress({ written: r.data!.written, total: r.data!.total });
         if (r.data!.done) {
+          toast.success("Import complete", { description: `${r.data!.written.toLocaleString()} of ${r.data!.total.toLocaleString()} rows are in the register.` });
           router.push(`/import/${batchId}`);
           router.refresh();
           return;

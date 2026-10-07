@@ -5,6 +5,7 @@ import { useState, useTransition } from "react";
 import { cancelCorrectionAction, submitCorrectionAction } from "@/app/(member)/me/actions";
 import { Msg, useRun } from "@/components/ui/use-run";
 import { maskUgPhoneInput } from "@/lib/phone";
+import { toast } from "@/lib/toast";
 
 export function CancelCorrection({ id }: { id: string }) {
   const { pending, msg, run } = useRun();
@@ -33,7 +34,10 @@ export function CorrectionForm({ initial, zones, professions }: { initial: Value
     const patch: Record<string, unknown> = Object.fromEntries(changed.map((k) => [k, k === "yearJoined" ? (v[k] ? Number(v[k]) : null) : v[k]]));
     start(async () => {
       const r = await submitCorrectionAction({ ...patch, note });
-      if (r && !r.ok) setErr({ error: r.error, fieldErrors: r.fieldErrors });
+      if (r && !r.ok) {
+        setErr({ error: r.error, fieldErrors: r.fieldErrors });
+        toast.error(r.error);
+      }
     });
   };
   const field = (k: string, label: string, input: React.ReactNode, hint?: string) => (

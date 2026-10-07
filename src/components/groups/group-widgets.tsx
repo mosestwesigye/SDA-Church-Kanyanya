@@ -6,6 +6,7 @@ import { addToMinistryAction, removeFromMinistryAction, setRoleAction } from "@/
 import { addMemberAction, createHouseholdAction, removeMemberAction, setRelationAction } from "@/app/(staff)/families/actions";
 import { MemberPicker, PickedMember, type Picked } from "@/components/members/member-picker";
 import type { Option } from "@/components/members/types";
+import { toast } from "@/lib/toast";
 
 type R = { ok: boolean; message?: string; error?: string };
 
@@ -17,7 +18,8 @@ function useRun() {
     start(async () => {
       const r = await fn();
       if (!r) return;
-      setMsg(r.ok ? (r.message ? { ok: true, text: r.message } : null) : { ok: false, text: r.error ?? "Failed." });
+      toast.result(r, "Saved.");
+      setMsg(r.ok ? null : { ok: false, text: r.error ?? "Failed." });
       if (r.ok) {
         after?.();
         router.refresh();

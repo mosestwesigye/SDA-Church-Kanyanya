@@ -1,14 +1,17 @@
 import type { Metadata } from "next";
-import { AuthTabs } from "@/components/auth/auth-ui";
+import { AuthTabs, GoogleFailed } from "@/components/auth/auth-ui";
+import { googleEnabled } from "@/server/auth/auth";
 import { PhoneSignIn } from "./phone-form";
 
 export const metadata: Metadata = { title: "Member sign in" };
 
-export default function PhoneLoginPage() {
+export default async function PhoneLoginPage({ searchParams }: { searchParams: Promise<{ google?: string }> }) {
+  const { google } = await searchParams;
   return (
     <>
       <AuthTabs />
-      <PhoneSignIn />
+      {google === "failed" && <GoogleFailed audience="member" />}
+      <PhoneSignIn google={googleEnabled()} />
     </>
   );
 }

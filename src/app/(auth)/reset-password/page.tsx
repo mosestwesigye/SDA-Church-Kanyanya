@@ -6,6 +6,7 @@ import { Suspense, useActionState, useState } from "react";
 import { AuthAlert, AuthHeader, AuthIcon, PasswordField } from "@/components/auth/auth-ui";
 import { SubmitButton } from "@/components/ui/form";
 import { resetPasswordAction } from "../actions";
+import { useToastState } from "@/components/ui/use-toast-state";
 
 function Rule({ ok, children }: { ok: boolean; children: React.ReactNode }) {
   return (
@@ -19,6 +20,7 @@ function Rule({ ok, children }: { ok: boolean; children: React.ReactNode }) {
 function ResetForm() {
   const token = useSearchParams().get("token") ?? "";
   const [state, action] = useActionState(resetPasswordAction, undefined);
+  useToastState(state);
   const [pw, setPw] = useState("");
   const [confirm, setConfirm] = useState("");
   if (!token) {

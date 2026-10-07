@@ -2,18 +2,25 @@
 
 import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
+import { toast } from "@/lib/toast";
 
 export type RunResult = { ok: boolean; message?: string; error?: string };
 
-/** Run a server action from a client widget, show its message and refresh the page on success. */
+/** Run a server action from a client widget: toast the outcome, keep errors inline and refresh the page on success. */
 export function useRun() {
   const router = useRouter();
   const [pending, start] = useTransition();
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
-  const run = (fn: () => Promise<RunResult>, after?: () => void) =>
+  const run = (fn: () => Promise<RunResult>, after?: () => void, success?: string) =>
     start(async () => {
-      const r = await fn();
-      setMsg(r.ok ? (r.message ? { ok: true, text: r.message } : null) : { ok: false, text: r.error ?? "Failed." });
+      let r: RunResult;
+      try {
+        r = await fn();
+      } catch {
+        r = { ok: false, error: "Couldn’t reach the server. Check your connection and try again." };
+      }
+      toast.result(r, success);
+      setMsg(r.ok ? null : { ok: false, text: r.error ?? "Failed." });
       if (r.ok) {
         after?.();
         router.refresh();

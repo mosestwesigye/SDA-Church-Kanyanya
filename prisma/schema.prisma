@@ -218,6 +218,8 @@ model Session {
   userAgent String?
   userId    String
   user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  // Signed in with Google but the authenticator code hasn't been entered yet: no access until it is.
+  secondFactorPending Boolean @default(false)
 
   @@index([userId])
 }

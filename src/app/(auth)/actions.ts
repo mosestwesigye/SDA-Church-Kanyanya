@@ -8,6 +8,7 @@ import { AuditWriter } from "@/server/audit/audit";
 import { auth } from "@/server/auth/auth";
 import { clear, hit, LOGIN_LIMITS } from "@/server/auth/rate-limit";
 import { db } from "@/server/db";
+import { flash } from "@/server/flash";
 
 export type FormState = { error?: string; ok?: string; email?: string } | undefined;
 
@@ -58,6 +59,7 @@ export async function signInAction(_: FormState, form: FormData): Promise<FormSt
   }
   await clear(db, `login:acct:${email}`);
   const next = safeNext(form.get("next"));
+  if (!twoFactor) await flash("success", "Signed in", "Welcome to SDAK Church Manager.");
   redirect(twoFactor ? `/login/verify?next=${encodeURIComponent(next)}` : next);
 }
 
@@ -67,6 +69,8 @@ export async function verifyTotpAction(_: FormState, form: FormData): Promise<Fo
   const h = await headers();
   const r = await hit(db, `totp:ip:${ipOf(h)}`, LOGIN_LIMITS.totp);
   if (!r.allowed) return { error: waitMessage(r.retryAfterSeconds) };
+  // After Google sign-in the session exists but is held until the code is entered.
+  const held = await auth.api.getSession({ headers: h });
   try {
     if (useBackup) await auth.api.verifyBackupCode({ body: { code }, headers: h });
     else {
@@ -77,6 +81,8 @@ export async function verifyTotpAction(_: FormState, form: FormData): Promise<Fo
     if (e instanceof APIError) return { error: useBackup ? "That backup code is not valid." : "That code is not valid. Check your phone’s time and try again." };
     throw e;
   }
+  if (held?.session.secondFactorPending) await db.session.update({ where: { id: held.session.id }, data: { secondFactorPending: false } });
+  await flash("success", "Signed in", "Two-step verification confirmed.");
   redirect(safeNext(form.get("next")));
 }
 
@@ -109,11 +115,13 @@ export async function resetPasswordAction(_: FormState, form: FormData): Promise
     if (e instanceof APIError) return { error: "This reset link has expired or was already used. Request a new one." };
     throw e;
   }
+  await flash("success", "Password changed", "Sign in with your new password.");
   redirect("/login?reset=1");
 }
 
 export async function signOutAction() {
   await auth.api.signOut({ headers: await headers() });
+  await flash("info", "You’ve signed out", "Your session has ended on this device.");
   redirect("/login");
 }
 
@@ -163,5 +171,22 @@ export async function verifyPhoneCodeAction(_: PhoneState, form: FormData): Prom
     }
     throw e;
   }
+  await flash("success", "Signed in", "Welcome to your church record.");
   redirect("/me");
+}
+
+// ───────── Google ─────────
+
+export async function googleSignInAction(form: FormData) {
+  const member = form.get("audience") === "member";
+  const res = await auth.api.signInSocial({
+    body: {
+      provider: "google",
+      callbackURL: member ? "/me" : safeNext(form.get("next")),
+      errorCallbackURL: member ? "/login/phone?google=failed" : "/login?google=failed",
+    },
+    headers: await headers(),
+  });
+  if (!res.url) return;
+  redirect(res.url);
 }

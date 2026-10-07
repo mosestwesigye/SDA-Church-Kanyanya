@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
 import { dismissDuplicateAction, mergeAction } from "@/app/(staff)/cleanup/actions";
+import { toast } from "@/lib/toast";
 
 export type CompareRecord = {
   id: string;
@@ -53,7 +54,8 @@ export function DuplicateCompare({
   function run(fn: () => Promise<{ ok: boolean; message?: string; error?: string }>) {
     start(async () => {
       const r = await fn();
-      setMsg({ ok: r.ok, text: r.ok ? (r.message ?? "Done.") : (r.error ?? "Failed.") });
+      toast.result(r, "Done.");
+      setMsg(r.ok ? null : { ok: false, text: r.error ?? "Failed." });
       if (r.ok) router.refresh();
     });
   }

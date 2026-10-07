@@ -4,6 +4,7 @@ import { useState, useTransition } from "react";
 import { maskUgPhoneInput, normalizeUgPhone } from "@/lib/phone";
 import { quickSaveAction } from "@/app/(staff)/cleanup/actions";
 import type { Option } from "@/components/members/types";
+import { toast } from "@/lib/toast";
 
 export type QuickRow = {
   id: string;
@@ -48,7 +49,11 @@ function Row({ r, zones, ministries }: { r: QuickRow; zones: Option[]; ministrie
       if (res.ok) {
         setState({ ok: res.data!.completeness });
         setVersion(res.data!.version);
-      } else setState({ error: res.error });
+        toast.success(`Saved ${r.memberId}`, { description: `Record now ${res.data!.completeness}% complete.` });
+      } else {
+        setState({ error: res.error });
+        toast.error(res.error);
+      }
     });
   }
 

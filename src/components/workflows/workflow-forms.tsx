@@ -5,6 +5,7 @@ import { useEffect, useState, useTransition } from "react";
 import { advanceTransferAction, cancelRequestAction, createRequestAction, decideAction } from "@/app/(staff)/transfers/actions";
 import { searchMembersAction } from "@/app/(staff)/members/form-actions";
 import { STATUS_KEYS, STATUS_META } from "@/lib/labels";
+import { toast } from "@/lib/toast";
 
 type R = { ok: boolean; message?: string; error?: string; fieldErrors?: Record<string, string> };
 
@@ -15,7 +16,8 @@ function useRun() {
   const run = (fn: () => Promise<R>, after?: (r: R) => void) =>
     start(async () => {
       const r = await fn();
-      setMsg({ ok: r.ok, text: r.ok ? (r.message ?? "Done.") : (r.error ?? "Failed.") });
+      toast.result(r, "Done.");
+      setMsg(r.ok ? null : { ok: false, text: r.error ?? "Failed." });
       if (r.ok) {
         after?.(r);
         router.refresh();

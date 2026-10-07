@@ -17,6 +17,7 @@ import {
 } from "@/app/(staff)/members/actions";
 import { FilterMenu } from "./filter-menu";
 import { COLUMNS, type ColumnKey, type DirRow, type Option } from "./types";
+import { toast } from "@/lib/toast";
 
 export type DirectoryProps = {
   rows: DirRow[];
@@ -94,7 +95,8 @@ export function DirectoryClient(p: DirectoryProps) {
   function run(action: () => Promise<{ ok: boolean; message?: string; error?: string }>) {
     start(async () => {
       const r = await action();
-      setNotice({ ok: r.ok, text: r.ok ? (r.message ?? "Done.") : (r.error ?? "Failed.") });
+      toast.result(r, "Done.");
+      setNotice(r.ok ? null : { ok: false, text: r.error ?? "Failed." });
       if (r.ok) {
         setDialog(null);
         setSelected(new Set());
@@ -537,7 +539,7 @@ function BulkDialogs({
         footer={
           <>
             <button type="button" className="btn btn-secondary" onClick={close}>Cancel</button>
-            <form method="post" action={`/api/export/members${search ? `?${search}` : ""}`} onSubmit={() => setTimeout(close, 300)}>
+            <form method="post" action={`/api/export/members${search ? `?${search}` : ""}`} onSubmit={() => { toast.info("Preparing your download…", { description: "It will save to your device in a moment. The download is logged." }); setTimeout(close, 300); }}>
               <input type="hidden" name="format" value={format} />
               <input type="hidden" name="ack" value="1" />
               <input type="hidden" name="columns" value={columns.join(",")} />

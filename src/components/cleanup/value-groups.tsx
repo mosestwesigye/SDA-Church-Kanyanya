@@ -4,6 +4,7 @@ import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
 import { mapValuesAction } from "@/app/(staff)/cleanup/actions";
 import type { Option } from "@/components/members/types";
+import { toast } from "@/lib/toast";
 
 export type GroupView = {
   key: string;
@@ -31,7 +32,8 @@ export function ValueGroup({ g, options, canAddNew, compact = false, nextLabel }
     const t = target === "blank" ? { kind: "blank" as const } : target === "new" ? { kind: "new" as const, label: newLabel } : { kind: "item" as const, id: target };
     start(async () => {
       const r = await mapValuesAction({ field: g.field as never, normalized: [...checked], target: t, remember });
-      setMsg({ ok: r.ok, text: r.ok ? (r.message ?? "Done.") : (r.error ?? "Failed.") });
+      toast.result(r, "Values updated.");
+      setMsg(r.ok ? null : { ok: false, text: r.error ?? "Failed." });
       if (r.ok) router.refresh();
     });
   }

@@ -1,10 +1,11 @@
 "use client";
 
 import { useActionState, useState } from "react";
-import { AuthAlert, AuthHeader, AuthIcon, IconField } from "@/components/auth/auth-ui";
+import { AuthAlert, AuthHeader, AuthIcon, GoogleSignIn, IconField, OrDivider } from "@/components/auth/auth-ui";
 import { SubmitButton } from "@/components/ui/form";
 import { maskUgPhoneInput } from "@/lib/phone";
 import { requestPhoneCodeAction, verifyPhoneCodeAction, type PhoneState } from "../../actions";
+import { useToastState } from "@/components/ui/use-toast-state";
 
 function StepBar({ step }: { step: 1 | 2 }) {
   return (
@@ -30,9 +31,11 @@ function StepBar({ step }: { step: 1 | 2 }) {
   );
 }
 
-export function PhoneSignIn() {
+export function PhoneSignIn({ google = false }: { google?: boolean }) {
   const [sent, request] = useActionState<PhoneState, FormData>(requestPhoneCodeAction, undefined);
   const [verified, verify] = useActionState<PhoneState, FormData>(verifyPhoneCodeAction, undefined);
+  useToastState(sent?.ok ? { ok: "Code requested — check your SMS" } : sent);
+  useToastState(verified);
   const [phone, setPhone] = useState("");
   const [restart, setRestart] = useState(false);
   const step = !restart && (verified?.step === "code" || sent?.step === "code") ? 2 : 1;
@@ -127,6 +130,13 @@ export function PhoneSignIn() {
         <AuthAlert state={sent?.error ? { error: sent.error } : undefined} />
         <SubmitButton className="btn btn-primary min-h-[48px] w-full text-[15px]" pendingText="Sending code…">Send me a code</SubmitButton>
       </form>
+      {google && (
+        <>
+          <OrDivider />
+          <GoogleSignIn audience="member" label="Continue with Google" />
+          <p className="mt-2 text-center text-[12px] text-ink-3">Works when your Google email is the one on your church record.</p>
+        </>
+      )}
       <p className="mt-6 text-[13px] text-ink-2">
         Family members sharing one phone number need their own number on record. Ask the church clerk to update it.
       </p>

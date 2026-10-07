@@ -8,6 +8,7 @@ import { MARITAL_LABELS, STATUS_KEYS, STATUS_META } from "@/lib/labels";
 import { queueMemberUpdate } from "@/lib/outbox";
 import { checkDuplicatesAction, createMemberAction, searchMembersAction, updateMemberAction } from "@/app/(staff)/members/form-actions";
 import type { Option } from "./types";
+import { toast } from "@/lib/toast";
 
 export type FormValues = {
   lastName: string;
@@ -193,6 +194,7 @@ export function MemberForm({
       const queueOffline = async () => {
         await queueMemberUpdate({ memberId: memberId!, version: version!, patch: fields, label: `${initial.lastName}, ${initial.firstName}` });
         setSavedOffline(true);
+        toast.info("Saved on this device", { description: "The change will be sent automatically when you’re back online." });
       };
       if (mode === "edit" && !navigator.onLine) return queueOffline();
       let r;
@@ -203,15 +205,20 @@ export function MemberForm({
             : await updateMemberAction(memberId!, version!, fields, household);
       } catch (e) {
         if (mode === "edit" && !navigator.onLine) return queueOffline();
-        setError(mode === "create" && !navigator.onLine ? "You’re offline. New members can only be added online." : "Couldn’t reach the server. Check your connection and try again.");
+        const msg = mode === "create" && !navigator.onLine ? "You’re offline. New members can only be added online." : "Couldn’t reach the server. Check your connection and try again.";
+        setError(msg);
+        toast.error(msg);
         console.error(e);
         return;
       }
       if (!r.ok) {
         setError(r.error);
         setFieldErrors(r.fieldErrors ?? {});
+        toast.error(r.error);
         return;
       }
+      if (mode === "create") (r.message?.includes("but not added") ? toast.warning : toast.success)("Member added to the register", { description: r.message });
+      else toast.success("Member record updated", { description: r.message });
       router.push(`/members/${r.data?.id ?? memberId}`);
       router.refresh();
     });

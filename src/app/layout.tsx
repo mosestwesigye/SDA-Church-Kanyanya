@@ -2,6 +2,7 @@ import type { Metadata, Viewport } from "next";
 import { Figtree, IBM_Plex_Mono } from "next/font/google";
 import { cookies } from "next/headers";
 import { ServiceWorkerRegister } from "@/components/shell/sw-register";
+import { Toaster } from "@/components/ui/toaster";
 import "./globals.css";
 
 const figtree = Figtree({ subsets: ["latin"], variable: "--font-figtree", display: "swap" });
@@ -29,6 +30,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
       <body>
         {children}
         <ServiceWorkerRegister />
+        <Toaster />
       </body>
     </html>
   );

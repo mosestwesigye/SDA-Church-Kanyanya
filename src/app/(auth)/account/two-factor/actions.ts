@@ -8,6 +8,7 @@ import { AuditWriter } from "@/server/audit/audit";
 import { auth } from "@/server/auth/auth";
 import { requireContext } from "@/server/auth/session";
 import { db } from "@/server/db";
+import { flash } from "@/server/flash";
 
 export type EnrolState =
   | { step: "password"; error?: string }
@@ -49,5 +50,6 @@ async function confirmEnrol(prev: EnrolState, form: FormData): Promise<EnrolStat
     oldValue: false,
     newValue: true,
   });
+  await flash("success", "Two-step verification is on", "You’ll be asked for a code from your authenticator app when you sign in.");
   redirect("/dashboard");
 }

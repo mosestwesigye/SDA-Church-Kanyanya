@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
 import { maskUgPhoneInput, normalizeUgPhone } from "@/lib/phone";
 import { quickSaveAction, resolveFlagAction, setTargetAction, undoMergeAction } from "@/app/(staff)/cleanup/actions";
+import { toast } from "@/lib/toast";
 
 function useAct() {
   const router = useRouter();
@@ -13,6 +14,7 @@ function useAct() {
   const run = (fn: () => Promise<{ ok: boolean; message?: string; error?: string }>) =>
     start(async () => {
       const r = await fn();
+      toast.result(r, "Saved.");
       setMsg({ ok: r.ok, text: r.ok ? (r.message ?? "Done.") : (r.error ?? "Failed.") });
       if (r.ok) router.refresh();
     });
@@ -38,7 +40,7 @@ export function PhoneFixRow({ r }: { r: { id: string; memberId: string; name: st
       <span className="mono w-40 text-[14px] text-error line-through decoration-1">{r.phoneRaw ?? "—"}</span>
       <input aria-label={`Corrected phone for ${r.name}`} aria-invalid={bad} className="input w-44" placeholder="07XX XXX XXX" inputMode="tel" value={phone} onChange={(e) => setPhone(maskUgPhoneInput(e.target.value))} />
       <button className="btn btn-primary" disabled={pending || !phone || bad}>Save</button>
-      {msg && <span role="status" className={`text-[13px] ${msg.ok ? "text-ok" : "text-error"}`}>{msg.text}</span>}
+      {msg && !msg.ok && <span role="alert" className="text-[13px] text-error">{msg.text}</span>}
     </form>
   );
 }
@@ -59,7 +61,7 @@ export function UndoMergeButton({ id }: { id: string }) {
   return (
     <span className="flex flex-col items-end">
       <button type="button" className="btn btn-secondary" disabled={pending} onClick={() => run(() => undoMergeAction(id))}>Undo merge</button>
-      {msg && <span role="status" className={`text-[12px] ${msg.ok ? "text-ok" : "text-error"}`}>{msg.text}</span>}
+      {msg && !msg.ok && <span role="alert" className="text-[12px] text-error">{msg.text}</span>}
     </span>
   );
 }
@@ -79,7 +81,7 @@ export function TargetForm({ percent, due }: { percent: number; due: string }) {
         <input className="input" type="date" value={d} onChange={(e) => setD(e.target.value)} />
       </label>
       <button className="btn btn-secondary" disabled={pending}>Set target</button>
-      {msg && <span role="status" className={`text-[13px] ${msg.ok ? "text-ok" : "text-error"}`}>{msg.text}</span>}
+      {msg && !msg.ok && <span role="alert" className="text-[13px] text-error">{msg.text}</span>}
     </form>
   );
 }

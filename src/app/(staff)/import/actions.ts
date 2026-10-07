@@ -8,6 +8,7 @@ import { db } from "@/server/db";
 import { ValidationError } from "@/server/errors";
 import { commitBatch, commitBatchSkippingErrors, commitStep, saveMapping, startImport, type mappingSchema } from "@/server/import/wizard";
 import type { z } from "zod";
+import { flash } from "@/server/flash";
 
 export async function uploadAction(_: unknown, form: FormData) {
   const ctx = await requirePermission("import", "run");
@@ -17,7 +18,10 @@ export async function uploadAction(_: unknown, form: FormData) {
     const { batch } = await startImport(db, ctx, { name: f.name, data: Buffer.from(await f.arrayBuffer()) });
     return { data: { id: batch.id } };
   });
-  if (r.ok) redirect(`/import/${r.data!.id}?step=map`);
+  if (r.ok) {
+    await flash("success", "File uploaded", "Next, match the spreadsheet columns to register fields.");
+    redirect(`/import/${r.data!.id}?step=map`);
+  }
   return r;
 }
 
@@ -26,7 +30,10 @@ export async function saveMappingAction(batchId: string, mapping: z.input<typeof
   const r = await attempt(async () => {
     await saveMapping(db, ctx, batchId, mapping);
   });
-  if (r.ok) redirect(`/import/${batchId}?step=validate`);
+  if (r.ok) {
+    await flash("success", "Column mapping saved", "Review the checks before importing.");
+    redirect(`/import/${batchId}?step=validate`);
+  }
   return r;
 }
 
@@ -38,6 +45,7 @@ export async function commitAction(batchId: string, skipErrors: boolean) {
   });
   if (r.ok) {
     revalidatePath("/members");
+    await flash("success", "Import complete");
     redirect(`/import/${batchId}`);
   }
   return r;

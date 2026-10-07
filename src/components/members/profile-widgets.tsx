@@ -15,6 +15,7 @@ import {
   uploadPhotoAction,
 } from "@/app/(staff)/members/[id]/actions";
 import type { Option } from "./types";
+import { toast } from "@/lib/toast";
 
 type Result = { ok: boolean; message?: string; error?: string };
 
@@ -25,7 +26,8 @@ function useRun() {
   const run = (fn: () => Promise<Result>, after?: () => void) =>
     start(async () => {
       const r = await fn();
-      setMsg({ ok: r.ok, text: r.ok ? (r.message ?? "Saved.") : (r.error ?? "Failed.") });
+      toast.result(r, "Saved.");
+      setMsg(r.ok ? null : { ok: false, text: r.error ?? "Failed." });
       if (r.ok) {
         after?.();
         router.refresh();

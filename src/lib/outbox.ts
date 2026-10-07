@@ -74,11 +74,13 @@ export function onOutboxChange(cb: () => void): () => void {
   return () => window.removeEventListener(EVENT, cb);
 }
 
-let syncing: Promise<void> | null = null;
+export type SyncResult = { sent: number; problems: number };
+let syncing: Promise<SyncResult> | null = null;
 
 /** Send pending items one by one. Stops at the first network failure. */
-export function syncOutbox(): Promise<void> {
+export function syncOutbox(): Promise<SyncResult> {
   syncing ??= (async () => {
+    const result: SyncResult = { sent: 0, problems: 0 };
     try {
       for (const item of await listOutbox()) {
         if (item.status !== "pending") continue;
@@ -90,19 +92,22 @@ export function syncOutbox(): Promise<void> {
             body: JSON.stringify({ clientId: item.id, memberId: item.memberId, version: item.version, patch: item.patch }),
           });
         } catch {
-          return; // still offline
+          return result; // still offline
         }
         if (res.ok) {
           await tx("readwrite", (s) => s.delete(item.id));
+          result.sent++;
         } else if (res.status === 401) {
-          return; // signed out: keep items until the user signs in again
+          return result; // signed out: keep items until the user signs in again
         } else {
           const msg = await res.text().catch(() => "");
           const next: OutboxItem = { ...item, status: res.status === 409 ? "conflict" : "failed", error: msg.slice(0, 300) || `Error ${res.status}` };
           await tx("readwrite", (s) => s.put(next));
+          result.problems++;
         }
         changed();
       }
+      return result;
     } finally {
       syncing = null;
     }

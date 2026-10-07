@@ -5,9 +5,11 @@ import { useActionState } from "react";
 import { AuthAlert, IconField, PasswordField } from "@/components/auth/auth-ui";
 import { SubmitButton } from "@/components/ui/form";
 import { signInAction } from "../actions";
+import { useToastState } from "@/components/ui/use-toast-state";
 
 export function LoginForm({ next }: { next: string }) {
   const [state, action] = useActionState(signInAction, undefined);
+  useToastState(state);
   return (
     <form action={action} className="space-y-5">
       <input type="hidden" name="next" value={next} />

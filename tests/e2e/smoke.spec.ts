@@ -16,7 +16,9 @@ test("sign-in errors keep the email and don't reveal which part was wrong", asyn
   await page.getByLabel("Email").fill("pastor@example.org");
   await page.getByLabel("Password", { exact: true }).fill("wrong-password-123");
   await page.getByRole("button", { name: "Sign in" }).click();
-  await expect(page.getByText("That email and password don’t match an active account.")).toBeVisible();
+  const message = "That email and password don’t match an active account.";
+  await expect(page.locator("form").getByText(message)).toBeVisible();
+  await expect(page.getByRole("region", { name: "Notifications" }).getByText(message)).toBeVisible();
   await expect(page.getByLabel("Email")).toHaveValue("pastor@example.org");
 });
 

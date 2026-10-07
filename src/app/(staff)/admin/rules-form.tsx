@@ -3,9 +3,11 @@
 import { useActionState } from "react";
 import { FormMessage, SubmitButton } from "@/components/ui/form";
 import { setPhotoRequiredAction } from "./actions";
+import { useToastState } from "@/components/ui/use-toast-state";
 
 export function PhotoRuleForm({ photoRequired }: { photoRequired: boolean }) {
   const [state, action] = useActionState(setPhotoRequiredAction, undefined);
+  useToastState(state);
   return (
     <form action={action} className="space-y-4">
       <label className="flex items-start gap-3 min-h-[44px] cursor-pointer">

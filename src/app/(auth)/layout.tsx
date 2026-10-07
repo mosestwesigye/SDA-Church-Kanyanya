@@ -1,9 +1,11 @@
 import Image from "next/image";
+import { CHURCH } from "@/config/church";
 
-const ASSURANCES = [
-  { title: "Two-step verification", text: "Staff accounts are protected with an authenticator app." },
-  { title: "Every change on record", text: "A permanent audit trail shows who changed what, and when." },
-  { title: "Personal data protected", text: "Handled under Uganda’s Data Protection and Privacy Act, 2019." },
+const PILLARS = [
+  { title: "Kept as the Church Manual requires", text: "Baptisms, professions of faith, transfers and removals recorded with the right approvals." },
+  { title: "Every family and cell", text: "Members placed in their families, cells and zones — from Kanyanya and Mpererwe to Komamboga and Kiteezi." },
+  { title: `Ready for ${CHURCH.conference}`, text: "The clerk’s quarterly membership report, prepared from the register in a few clicks." },
+  { title: "Protected under DPPA 2019", text: "Two-step verification for staff, a full audit trail, and personal data handled under Uganda’s Data Protection and Privacy Act." },
 ];
 
 export default function AuthLayout({ children }: { children: React.ReactNode }) {
@@ -19,37 +21,50 @@ export default function AuthLayout({ children }: { children: React.ReactNode }) 
           <Image src="/sda-mark.png" alt="" width={420} height={460} className="absolute -bottom-16 -right-10 w-[380px] opacity-[0.05]" />
         </div>
 
-        <div className="relative flex items-center gap-3">
+        <div className="relative flex items-center gap-3.5">
           <span className="grid size-12 place-items-center rounded-[12px] bg-white/[0.08] ring-1 ring-white/15">
             <Image src="/sda-mark.png" alt="" width={28} height={31} priority />
           </span>
           <span>
-            <span className="block text-[17px] font-semibold leading-tight">SDAK Church Manager</span>
-            <span className="block text-[13px] text-sidebar-muted">Seventh-day Adventist Church Kanyanya</span>
+            <span className="block text-[11px] font-semibold uppercase tracking-[0.14em] text-sidebar-muted">Seventh-day Adventist Church</span>
+            <span className="block text-[20px] font-semibold leading-tight">Kanyanya</span>
           </span>
         </div>
 
-        <div className="relative max-w-[440px]">
-          <h2 className="text-[34px] font-semibold leading-[1.15] tracking-[-0.02em] xl:text-[40px]">Membership records, kept with care.</h2>
-          <p className="mt-4 text-[16px] leading-relaxed text-sidebar-muted">
-            One secure register for the church clerk, pastors, elders and ministry leaders — and a simple way for members to keep their own details up to date.
+        <div className="relative max-w-[540px] py-10">
+          <p className="inline-flex items-center gap-2 rounded-full bg-white/[0.07] px-3 py-1 text-[12px] font-medium text-[#9fd6de] ring-1 ring-white/10">
+            <span aria-hidden className="size-1.5 rounded-full bg-[#9fd6de]" />
+            {CHURCH.office} · Membership register
           </p>
-          <ul className="mt-10 space-y-5">
-            {ASSURANCES.map((a) => (
-              <li key={a.title} className="flex gap-3.5">
-                <span aria-hidden className="mt-0.5 grid size-7 shrink-0 place-items-center rounded-full bg-[#9fd6de]/15 text-[#9fd6de] ring-1 ring-[#9fd6de]/30">
-                  <svg viewBox="0 0 24 24" className="size-4" fill="none" stroke="currentColor" strokeWidth={2.2} strokeLinecap="round" strokeLinejoin="round"><path d="m5 12.5 4.5 4.5L19 7.5" /></svg>
+          <h2 className="mt-5 text-[32px] font-semibold leading-[1.15] tracking-[-0.02em] xl:text-[38px]">Caring for every member of the Kanyanya church family.</h2>
+          <p className="mt-4 text-[15px] leading-relaxed text-sidebar-muted">
+            The church register for {CHURCH.shortName} — kept by the clerk, used by the pastor, elders and cell leaders, and open to every member for their own record.
+          </p>
+
+          <figure className="mt-8 border-l-2 border-[#9fd6de]/50 pl-4">
+            <blockquote className="text-[16px] italic leading-relaxed">“{CHURCH.scripture.text}”</blockquote>
+            <figcaption className="mt-1 text-[13px] text-sidebar-muted">{CHURCH.scripture.ref}</figcaption>
+          </figure>
+
+          <ul className="mt-9 grid gap-x-6 gap-y-5 xl:grid-cols-2">
+            {PILLARS.map((a) => (
+              <li key={a.title} className="flex gap-3">
+                <span aria-hidden className="mt-0.5 grid size-6 shrink-0 place-items-center rounded-full bg-[#9fd6de]/15 text-[#9fd6de] ring-1 ring-[#9fd6de]/30">
+                  <svg viewBox="0 0 24 24" className="size-3.5" fill="none" stroke="currentColor" strokeWidth={2.4} strokeLinecap="round" strokeLinejoin="round"><path d="m5 12.5 4.5 4.5L19 7.5" /></svg>
                 </span>
                 <span>
-                  <span className="block text-[15px] font-semibold">{a.title}</span>
-                  <span className="block text-[14px] text-sidebar-muted">{a.text}</span>
+                  <span className="block text-[14px] font-semibold leading-snug">{a.title}</span>
+                  <span className="mt-0.5 block text-[13px] leading-snug text-sidebar-muted">{a.text}</span>
                 </span>
               </li>
             ))}
           </ul>
         </div>
 
-        <p className="relative text-[12px] text-sidebar-muted">© {year} SDA Church Kanyanya · Central Uganda Conference</p>
+        <div className="relative space-y-0.5 text-[12px] text-sidebar-muted">
+          <p>© {year} {CHURCH.name}</p>
+          <p>{CHURCH.place} · {CHURCH.conference}</p>
+        </div>
       </aside>
 
       {/* Form column */}
@@ -57,8 +72,8 @@ export default function AuthLayout({ children }: { children: React.ReactNode }) 
         <div className="flex items-center gap-3 border-b border-line bg-sidebar px-5 py-4 text-sidebar-ink lg:hidden">
           <Image src="/sda-mark.png" alt="" width={24} height={26} priority />
           <span>
-            <span className="block text-[15px] font-semibold leading-tight">SDAK Church Manager</span>
-            <span className="block text-[12px] text-sidebar-muted">SDA Church Kanyanya</span>
+            <span className="block text-[10px] font-semibold uppercase tracking-[0.14em] text-sidebar-muted">Seventh-day Adventist Church</span>
+            <span className="block text-[16px] font-semibold leading-tight">Kanyanya · Membership register</span>
           </span>
         </div>
         <main className="flex flex-1 items-center justify-center px-5 py-10 sm:px-8">
@@ -69,7 +84,7 @@ export default function AuthLayout({ children }: { children: React.ReactNode }) 
             <svg viewBox="0 0 24 24" className="size-3.5" fill="none" stroke="currentColor" strokeWidth={2} aria-hidden><rect x="4.5" y="10.5" width="15" height="10" rx="2" /><path d="M8 10.5V7.5a4 4 0 0 1 8 0v3" /></svg>
             Encrypted connection
           </span>
-          <span>Need access? Contact the church clerk.</span>
+          <span>Need access? Speak to the church clerk after Sabbath service.</span>
         </footer>
       </div>
     </div>

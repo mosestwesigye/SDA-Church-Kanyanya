@@ -1,8 +1,10 @@
 "use client";
 
-import { useActionState, useState } from "react";
+import { useActionState, useEffect, useState } from "react";
 import { FormMessage, SubmitButton } from "@/components/ui/form";
 import { enrolAction, type EnrolState } from "./actions";
+import { toast } from "@/lib/toast";
+import { useToastState } from "@/components/ui/use-toast-state";
 
 function CopyButton({ text }: { text: string }) {
   const [copied, setCopied] = useState(false);
@@ -10,7 +12,7 @@ function CopyButton({ text }: { text: string }) {
     <button
       type="button"
       className="min-h-[36px] rounded-[6px] border border-line bg-surface px-3 text-[13px] font-semibold text-primary"
-      onClick={() => navigator.clipboard?.writeText(text).then(() => setCopied(true), () => setCopied(false))}
+      onClick={() => navigator.clipboard?.writeText(text).then(() => { setCopied(true); toast.success("Copied to the clipboard"); }, () => { setCopied(false); toast.error("Couldn’t copy. Select the text and copy it yourself."); })}
     >
       {copied ? "Copied" : "Copy key"}
     </button>
@@ -19,6 +21,10 @@ function CopyButton({ text }: { text: string }) {
 
 export function EnrolForm() {
   const [state, action] = useActionState<EnrolState, FormData>(enrolAction, { step: "password" });
+  useToastState(state.error ? { error: state.error } : undefined);
+  useEffect(() => {
+    if (state.step === "scan" && !state.error) toast.info("Scan the QR code", { description: "Then enter the 6-digit code from your authenticator app." });
+  }, [state]);
 
   if (state.step === "password") {
     return (

@@ -3,7 +3,16 @@
 import Link from "next/link";
 import { useCallback, useEffect, useState, useSyncExternalStore } from "react";
 import { Dialog } from "@/components/ui/dialog";
-import { listOutbox, onOutboxChange, removeOutboxItem, syncOutbox, type OutboxItem } from "@/lib/outbox";
+import { listOutbox, onOutboxChange, removeOutboxItem, syncOutbox as syncItems, type OutboxItem } from "@/lib/outbox";
+import { toast } from "@/lib/toast";
+
+/** Send queued edits and say what happened. */
+async function syncOutbox() {
+  const r = await syncItems();
+  if (r.sent) toast.success(`${r.sent} offline change${r.sent === 1 ? "" : "s"} saved`, { description: "Edits made on this device have reached the register." });
+  if (r.problems) toast.error(`${r.problems} offline change${r.problems === 1 ? "" : "s"} couldn’t be saved`, { description: "Open the connection status in the top bar to review them." });
+  return r;
+}
 
 function subscribe(cb: () => void) {
   window.addEventListener("online", cb);

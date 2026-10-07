@@ -11,6 +11,8 @@ import {
   correctionQueue,
   createCorrectionRequest,
   decideCorrectionRequest,
+  finishGoogleMemberLogin,
+  memberForGoogleEmail,
   getOwnRecord,
   hasCurrentConsent,
   provisionMemberLogin,
@@ -101,6 +103,52 @@ describe("phone sign-in", () => {
     const { ctx, phone: p } = await memberLogin();
     await db.user.update({ where: { id: ctx.userId }, data: { active: false } });
     expect(await provisionMemberLogin(db, p)).toBeNull();
+  });
+});
+
+describe("Google sign-in matching", () => {
+  const mail = () => `g${Date.now().toString(36)}${seq++}@example.org`;
+
+  it("matches one live member by email, case-insensitively, and the new login gets the Member role (audited)", async () => {
+    const email = mail();
+    const m = await createMember(db, clerk, { lastName: "Google", firstName: "Member", email });
+    expect(await memberForGoogleEmail(db, email.toUpperCase())).toBe(m.id);
+    // What Better Auth does with the hook's answer.
+    const user = await db.user.create({ data: { name: "Google Member", email, emailVerified: true, memberId: m.id } });
+    await finishGoogleMemberLogin(db, user.id);
+    const ctx = await loadAuthContext(db, user.id);
+    expect(ctx.roles).toEqual(["MEMBER"]);
+    expect(await db.auditLog.count({ where: { entity: "User", entityId: user.id, action: "CREATE", source: "SELF_SERVICE" } })).toBe(1);
+  });
+
+  it("refuses unknown, shared and deceased emails", async () => {
+    expect(await memberForGoogleEmail(db, mail())).toBeNull();
+    expect(await memberForGoogleEmail(db, "not-an-email")).toBeNull();
+    const shared = mail();
+    await createMember(db, clerk, { lastName: "Shared", firstName: "A", email: shared });
+    await createMember(db, clerk, { lastName: "Shared", firstName: "B", email: shared });
+    expect(await memberForGoogleEmail(db, shared)).toBeNull();
+    const late = mail();
+    const d = await createMember(db, clerk, { lastName: "Late", firstName: "G", email: late });
+    await updateMember(db, clerk, d.id, { status: "DECEASED" });
+    expect(await memberForGoogleEmail(db, late)).toBeNull();
+  });
+
+  it("moves an existing phone login onto the Google email instead of creating a second login", async () => {
+    const { m, ctx } = await memberLogin();
+    const email = mail();
+    await updateMember(db, clerk, m.id, { email });
+    expect(await memberForGoogleEmail(db, email)).toBeNull();
+    expect((await db.user.findUniqueOrThrow({ where: { id: ctx.userId } })).email).toBe(email);
+    expect(await db.auditLog.count({ where: { entity: "User", entityId: ctx.userId, field: "email" } })).toBe(1);
+  });
+
+  it("never hands a staff login to a member's Google account", async () => {
+    const email = mail();
+    const m = await createMember(db, clerk, { lastName: "Staff", firstName: "Google", email });
+    const staff = await userWith(db, ["ELDER"], { memberId: m.id });
+    expect(await memberForGoogleEmail(db, email)).toBeNull();
+    expect((await db.user.findUniqueOrThrow({ where: { id: staff.userId } })).email).not.toBe(email);
   });
 });
 

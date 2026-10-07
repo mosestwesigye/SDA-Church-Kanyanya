@@ -5,9 +5,11 @@ import { useActionState } from "react";
 import { AuthAlert, AuthHeader, AuthIcon, BackLink, IconField } from "@/components/auth/auth-ui";
 import { SubmitButton } from "@/components/ui/form";
 import { requestResetAction } from "../actions";
+import { useToastState } from "@/components/ui/use-toast-state";
 
 export default function ForgotPasswordPage() {
   const [state, action] = useActionState(requestResetAction, undefined);
+  useToastState(state?.ok ? { ok: "Reset link requested — check your email" } : state);
 
   if (state?.ok) {
     return (

@@ -2,6 +2,7 @@
 
 import { useTransition } from "react";
 import { setThemeAction, type ThemeChoice } from "@/app/theme/actions";
+import { toast } from "@/lib/toast";
 
 export function ThemeToggle({ current }: { current: ThemeChoice }) {
   const [pending, start] = useTransition();
@@ -15,7 +16,10 @@ export function ThemeToggle({ current }: { current: ThemeChoice }) {
           role="radio"
           aria-checked={current === value}
           disabled={pending}
-          onClick={() => start(() => setThemeAction(value))}
+          onClick={() => start(async () => {
+            await setThemeAction(value);
+            toast.success(value === "system" ? "Theme now matches your device" : `${label} theme on`);
+          })}
           className={`min-h-[44px] rounded-[6px] border px-4 text-[14px] ${current === value ? "border-primary bg-primary-soft font-semibold" : "border-line"}`}
         >
           {label}
