@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
+import { AuthAlert, AuthHeader, AuthIcon, AuthTabs } from "@/components/auth/auth-ui";
 import { LoginForm } from "./login-form";
 
 export const metadata: Metadata = { title: "Sign in" };
@@ -8,13 +9,30 @@ export default async function LoginPage({ searchParams }: { searchParams: Promis
   const { next, reset } = await searchParams;
   return (
     <>
-      <h1 className="text-[28px] font-semibold mb-1">Sign in</h1>
-      <p className="text-ink-2 mb-6">Church staff accounts only.</p>
-      {reset && <p className="mb-4 rounded-[6px] bg-primary-soft text-primary px-3 py-2 text-sm">Password changed. Sign in with your new password.</p>}
+      <AuthTabs />
+      <AuthHeader eyebrow="Church staff" title="Sign in to your account">
+        For the clerk, pastors, elders, ministry leaders and other church officers.
+      </AuthHeader>
+      {reset && (
+        <div className="mb-5">
+          <AuthAlert state={{ ok: "Password changed. Sign in with your new password." }} />
+        </div>
+      )}
       <LoginForm next={next ?? "/dashboard"} />
-      <p className="mt-6 border-t border-line pt-5 text-center text-[14px] text-ink-2">
-        Church member? <Link href="/login/phone" className="font-semibold text-primary">Sign in with your phone number</Link>
-      </p>
+      <div className="mt-8 rounded-[10px] border border-line bg-surface p-4">
+        <p className="flex items-start gap-3 text-[14px]">
+          <span className="grid size-9 shrink-0 place-items-center rounded-[8px] bg-surface-2 text-ink-2">
+            <AuthIcon name="phone" />
+          </span>
+          <span>
+            <span className="block font-semibold">Are you a church member?</span>
+            <span className="block text-ink-2">See your own record with a code sent to your phone.</span>
+            <Link href="/login/phone" className="mt-1 inline-flex items-center gap-1 font-semibold text-primary hover:underline">
+              Member sign in <AuthIcon name="arrowRight" className="size-4" />
+            </Link>
+          </span>
+        </p>
+      </div>
     </>
   );
 }

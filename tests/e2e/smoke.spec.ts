@@ -6,7 +6,7 @@ const PASSWORD = process.env.DEMO_PASSWORD ?? "Demo-pass-2026";
 async function signIn(page: Page, email: string) {
   await page.goto("/login");
   await page.getByLabel("Email").fill(email);
-  await page.getByLabel("Password").fill(PASSWORD);
+  await page.getByLabel("Password", { exact: true }).fill(PASSWORD);
   await page.getByRole("button", { name: "Sign in" }).click();
   await page.waitForURL("**/dashboard");
 }
@@ -14,7 +14,7 @@ async function signIn(page: Page, email: string) {
 test("sign-in errors keep the email and don't reveal which part was wrong", async ({ page }) => {
   await page.goto("/login");
   await page.getByLabel("Email").fill("pastor@example.org");
-  await page.getByLabel("Password").fill("wrong-password-123");
+  await page.getByLabel("Password", { exact: true }).fill("wrong-password-123");
   await page.getByRole("button", { name: "Sign in" }).click();
   await expect(page.getByText("That email and password don’t match an active account.")).toBeVisible();
   await expect(page.getByLabel("Email")).toHaveValue("pastor@example.org");
@@ -25,7 +25,7 @@ test("signed-out visitors are sent to the right sign-in page @mobile", async ({ 
   await expect(page).toHaveURL(/\/login\?next=%2Fmembers/);
   await page.goto("/me");
   await expect(page).toHaveURL(/\/login\/phone/);
-  await expect(page.getByRole("heading", { name: "Member sign in" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Sign in with your phone" })).toBeVisible();
 });
 
 test("pastor: dashboard, directory search, profile and permission limits", async ({ page }) => {
