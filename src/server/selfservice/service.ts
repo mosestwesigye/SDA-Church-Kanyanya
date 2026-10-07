@@ -64,47 +64,6 @@ export async function provisionMemberLogin(db: Db, phoneInput: string): Promise<
   });
 }
 
-/**
- * Google sign-in for a member with no login yet: the Google email must be on exactly one
- * live member record. Returns that member's id, or null (unknown, shared or deceased).
- * A member who already signs in by phone gets that login's email set to the Google email
- * instead, so Google links to it on the next attempt.
- */
-export async function memberForGoogleEmail(db: Db, emailInput: string): Promise<string | null> {
-  const email = emailInput.trim().toLowerCase();
-  if (!email.includes("@")) return null;
-  const members = await db.member.findMany({
-    where: { ...LIVE, email: { equals: email, mode: "insensitive" }, OR: [{ status: null }, { status: { not: "DECEASED" } }] },
-    include: { user: { include: { roles: { include: { role: true } } } } },
-    take: 2,
-  });
-  if (members.length !== 1) return null;
-  const m = members[0]!;
-  if (!m.user) return m.id;
-  const memberOnly = m.user.roles.every((r) => r.role.key === "MEMBER");
-  if (!memberOnly || !m.user.active || (await db.user.count({ where: { email } }))) return null;
-  await db.$transaction(async (tx) => {
-    await tx.user.update({ where: { id: m.user!.id }, data: { email, emailVerified: true } });
-    await new AuditWriter(tx, { ...SYSTEM_ACTOR, label: "Self-service sign-in" }, "SELF_SERVICE").log({
-      action: "UPDATE", entity: "User", entityId: m.user!.id, memberId: m.id, field: "email", note: "Google sign-in: login email set from the member record",
-    });
-  });
-  return null;
-}
-
-/** After a Google sign-in created a member login: give it the Member role and record it. */
-export async function finishGoogleMemberLogin(db: Db, userId: string) {
-  const user = await db.user.findUnique({ where: { id: userId }, select: { memberId: true, roles: true } });
-  if (!user?.memberId) return;
-  await db.$transaction(async (tx) => {
-    const role = await tx.role.findUniqueOrThrow({ where: { key: "MEMBER" } });
-    if (!user.roles.length) await tx.userRole.create({ data: { userId, roleId: role.id } });
-    await new AuditWriter(tx, { ...SYSTEM_ACTOR, label: "Self-service sign-in" }, "SELF_SERVICE").log({
-      action: "CREATE", entity: "User", entityId: userId, memberId: user.memberId, newValue: { roles: ["MEMBER"] }, note: "Member login created at first Google sign-in",
-    });
-  });
-}
-
 // ───────── Consent (Data Protection and Privacy Act, 2019) ─────────
 
 export async function consentVersion(db: DbOrTx): Promise<string> {

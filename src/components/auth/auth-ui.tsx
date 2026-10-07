@@ -2,10 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useEffect, useState } from "react";
-import { useFormStatus } from "react-dom";
-import { googleSignInAction } from "@/app/(auth)/actions";
-import { toast } from "@/lib/toast";
+import { useState } from "react";
 
 /* ───────── Icons (24px grid, stroke = currentColor) ───────── */
 
@@ -196,58 +193,3 @@ export function BackLink({ href, children }: { href: string; children: React.Rea
     </Link>
   );
 }
-
-/* ───────── Google ───────── */
-
-function GoogleSubmit({ label }: { label: string }) {
-  const { pending } = useFormStatus();
-  return (
-    <button type="submit" disabled={pending} aria-busy={pending} className="flex h-12 w-full items-center justify-center gap-3 rounded-[8px] border border-line bg-surface text-[15px] font-semibold text-ink shadow-[0_1px_2px_rgba(12,29,33,0.06)] transition-colors hover:bg-surface-2 disabled:opacity-60">
-      <svg aria-hidden viewBox="0 0 48 48" className="size-5">
-        <path fill="#FFC107" d="M43.6 20.5H42V20H24v8h11.3C33.7 32.7 29.2 36 24 36c-6.6 0-12-5.4-12-12s5.4-12 12-12c3.1 0 5.8 1.2 7.9 3.1l5.7-5.7C34 6.1 29.3 4 24 4 12.9 4 4 12.9 4 24s8.9 20 20 20 20-8.9 20-20c0-1.3-.1-2.4-.4-3.5z" />
-        <path fill="#FF3D00" d="m6.3 14.7 6.6 4.8C14.7 15.1 19 12 24 12c3.1 0 5.8 1.2 7.9 3.1l5.7-5.7C34 6.1 29.3 4 24 4 16.3 4 9.7 8.3 6.3 14.7z" />
-        <path fill="#4CAF50" d="M24 44c5.2 0 9.9-2 13.4-5.2l-6.2-5.2C29.2 35.1 26.7 36 24 36c-5.2 0-9.6-3.3-11.3-7.9l-6.5 5C9.5 39.6 16.2 44 24 44z" />
-        <path fill="#1976D2" d="M43.6 20.5H42V20H24v8h11.3c-.8 2.2-2.2 4.2-4.1 5.6l6.2 5.2C37 39.2 44 34 44 24c0-1.3-.1-2.4-.4-3.5z" />
-      </svg>
-      {pending ? "Opening Google…" : label}
-    </button>
-  );
-}
-
-/** "Continue with Google" — only signs in people already known to the church (see src/server/auth/auth.ts). */
-export function GoogleSignIn({ audience, next, label = "Continue with Google" }: { audience: "staff" | "member"; next?: string; label?: string }) {
-  return (
-    <form action={googleSignInAction}>
-      <input type="hidden" name="audience" value={audience} />
-      {next && <input type="hidden" name="next" value={next} />}
-      <GoogleSubmit label={label} />
-    </form>
-  );
-}
-
-export function OrDivider({ children = "or" }: { children?: React.ReactNode }) {
-  return (
-    <div className="my-6 flex items-center gap-3 text-[12px] font-medium uppercase tracking-wider text-ink-3">
-      <span className="h-px flex-1 bg-line" />
-      {children}
-      <span className="h-px flex-1 bg-line" />
-    </div>
-  );
-}
-
-/** Shown when Google sign-in was refused or cancelled. */
-export function GoogleFailed({ audience }: { audience: "staff" | "member" }) {
-  const text =
-    audience === "staff"
-      ? "That Google account isn’t linked to a staff account. Use the Google account with the same email the clerk set up for you, or sign in with your password."
-      : "That Google account doesn’t match the email on your church record. Sign in with your phone instead, or ask the clerk to add this email to your record. If you’ve signed in by phone before, try Google once more.";
-  useEffect(() => {
-    toast.error("Google sign-in didn’t work");
-  }, []);
-  return (
-    <div className="mb-5">
-      <AuthAlert state={{ error: text }} />
-    </div>
-  );
-}
-

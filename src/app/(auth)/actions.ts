@@ -69,8 +69,6 @@ export async function verifyTotpAction(_: FormState, form: FormData): Promise<Fo
   const h = await headers();
   const r = await hit(db, `totp:ip:${ipOf(h)}`, LOGIN_LIMITS.totp);
   if (!r.allowed) return { error: waitMessage(r.retryAfterSeconds) };
-  // After Google sign-in the session exists but is held until the code is entered.
-  const held = await auth.api.getSession({ headers: h });
   try {
     if (useBackup) await auth.api.verifyBackupCode({ body: { code }, headers: h });
     else {
@@ -81,7 +79,6 @@ export async function verifyTotpAction(_: FormState, form: FormData): Promise<Fo
     if (e instanceof APIError) return { error: useBackup ? "That backup code is not valid." : "That code is not valid. Check your phone’s time and try again." };
     throw e;
   }
-  if (held?.session.secondFactorPending) await db.session.update({ where: { id: held.session.id }, data: { secondFactorPending: false } });
   await flash("success", "Signed in", "Two-step verification confirmed.");
   redirect(safeNext(form.get("next")));
 }
@@ -173,20 +170,4 @@ export async function verifyPhoneCodeAction(_: PhoneState, form: FormData): Prom
   }
   await flash("success", "Signed in", "Welcome to your church record.");
   redirect("/me");
-}
-
-// ───────── Google ─────────
-
-export async function googleSignInAction(form: FormData) {
-  const member = form.get("audience") === "member";
-  const res = await auth.api.signInSocial({
-    body: {
-      provider: "google",
-      callbackURL: member ? "/me" : safeNext(form.get("next")),
-      errorCallbackURL: member ? "/login/phone?google=failed" : "/login?google=failed",
-    },
-    headers: await headers(),
-  });
-  if (!res.url) return;
-  redirect(res.url);
 }

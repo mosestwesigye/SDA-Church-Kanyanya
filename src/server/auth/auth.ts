@@ -11,9 +11,6 @@ import { hashPassword, verifyPassword } from "./password";
 /** Idle timeout: a session expires after this many minutes without activity. */
 export const SESSION_IDLE_MINUTES = Number(process.env.SESSION_IDLE_MINUTES ?? 30);
 
-/** Google sign-in is offered only when both credentials are set. */
-export const googleEnabled = () => Boolean(process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET);
-
 export function createAuth(client: Db = db) {
   return betterAuth({
     appName: "SDAK Church Manager",
@@ -37,13 +34,7 @@ export function createAuth(client: Db = db) {
         });
       },
     },
-    // Google: only for people already known — staff by their account email, members by the email on their record.
-    socialProviders: googleEnabled()
-      ? { google: { clientId: process.env.GOOGLE_CLIENT_ID!, clientSecret: process.env.GOOGLE_CLIENT_SECRET!, prompt: "select_account" } }
-      : {},
-    account: { accountLinking: { enabled: true, trustedProviders: ["google"], allowDifferentEmails: false } },
     session: {
-      additionalFields: { secondFactorPending: { type: "boolean", defaultValue: false, input: false } },
       // Sliding idle timeout: each request older than updateAge extends expiry.
       expiresIn: SESSION_IDLE_MINUTES * 60,
       updateAge: Math.min(5 * 60, SESSION_IDLE_MINUTES * 30),
@@ -68,39 +59,19 @@ export function createAuth(client: Db = db) {
       },
     },
     databaseHooks: {
-      user: {
-        create: {
-          // Logins are never self-registered: staff are added by an administrator and members are
-          // provisioned from the register. The only sign-up allowed here is a Google sign-in whose
-          // email is on exactly one member record.
-          async before(user, ctx) {
-            if (!ctx?.path?.startsWith("/callback/")) return false;
-            const { memberForGoogleEmail } = await import("../selfservice/service");
-            const memberId = await memberForGoogleEmail(client, user.email);
-            if (!memberId) return false;
-            return { data: { ...user, email: user.email.toLowerCase(), memberId, active: true } };
-          },
-          async after(user) {
-            const { finishGoogleMemberLogin } = await import("../selfservice/service");
-            await finishGoogleMemberLogin(client, user.id);
-          },
-        },
-      },
       session: {
         create: {
-          async before(session, ctx) {
-            const user = await client.user.findUnique({ where: { id: session.userId }, select: { active: true, twoFactorEnabled: true } });
+          async before(session) {
+            const user = await client.user.findUnique({ where: { id: session.userId }, select: { active: true } });
             if (!user?.active) return false;
-            // Google skips the plugin's code step, so hold the session until the authenticator code is entered.
-            if (ctx?.path?.startsWith("/callback/") && user.twoFactorEnabled) return { data: { ...session, secondFactorPending: true } };
           },
-          async after(session, ctx) {
+          async after(session) {
             const user = await client.user.update({ where: { id: session.userId }, data: { lastLoginAt: new Date() } });
             await new AuditWriter(client, { userId: user.id, label: user.name, sessionId: session.id, ipAddress: session.ipAddress }, "UI").log({
               action: "LOGIN",
               entity: "User",
               entityId: user.id,
-              note: [ctx?.path?.startsWith("/callback/google") ? "Google sign-in" : null, session.userAgent].filter(Boolean).join(" · ") || null,
+              note: session.userAgent ?? null,
             });
           },
         },

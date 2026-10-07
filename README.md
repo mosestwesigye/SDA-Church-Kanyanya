@@ -54,8 +54,7 @@ pnpm build && pnpm test:e2e            # or E2E_BASE_URL=http://localhost:3001 p
 1. Create the project from this repo and add a Postgres database (Vercel Marketplace / Neon). `DATABASE_URL` should be the pooled URL.
 2. Set `BETTER_AUTH_SECRET`, `BETTER_AUTH_URL` (the production URL), `SESSION_IDLE_MINUTES`, `RESEND_API_KEY`, `EMAIL_FROM`.
 3. For member sign-in by SMS, set `AT_USERNAME`, `AT_API_KEY` and optionally `AT_SENDER_ID` (Africa's Talking). Without them, phone sign-in fails in production.
-4. For Google sign-in, set `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET` (Google Cloud → APIs & Services → Credentials → OAuth client ID, type *Web application*, authorised redirect URI `https://<your-site>/api/auth/callback/google`). The button appears only when both are set. Google never creates accounts: staff sign in when their Google email matches their staff account (they still enter their authenticator code), and members when it matches the email on their record.
-5. Run `pnpm db:migrate` and `pnpm db:bootstrap` once against the production database (from your machine with `DATABASE_URL` pointing at it), then import the register.
+4. Run `pnpm db:migrate` and `pnpm db:bootstrap` once against the production database (from your machine with `DATABASE_URL` pointing at it), then import the register.
 
 ## Data rules
 

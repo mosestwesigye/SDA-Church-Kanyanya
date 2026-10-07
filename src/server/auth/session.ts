@@ -13,13 +13,11 @@ function clientIp(h: Headers): string | null {
   return h.get("x-forwarded-for")?.split(",")[0]?.trim() || h.get("x-real-ip") || null;
 }
 
-const getSession = cache(async () => auth.api.getSession({ headers: await headers() }));
-
-/** Current user's auth context, or null when signed out (or still owing the authenticator code). Cached per request. */
+/** Current user's auth context, or null when signed out. Cached per request. */
 export const getContext = cache(async (): Promise<RequestContext | null> => {
   const h = await headers();
-  const session = await getSession();
-  if (!session || session.session.secondFactorPending) return null;
+  const session = await auth.api.getSession({ headers: h });
+  if (!session) return null;
   const ctx = await loadAuthContext(db, session.user.id, { sessionId: session.session.id, ipAddress: clientIp(h) });
   return ctx.active ? ctx : null;
 });
@@ -30,7 +28,7 @@ export const getContext = cache(async (): Promise<RequestContext | null> => {
  */
 export async function requireContext(opts: { allowWithout2fa?: boolean } = {}): Promise<RequestContext> {
   const ctx = await getContext();
-  if (!ctx) redirect((await getSession())?.session.secondFactorPending ? "/login/verify?google=1" : "/login");
+  if (!ctx) redirect("/login");
   if (ctx.requires2fa && !ctx.twoFactorEnabled && !opts.allowWithout2fa) redirect("/account/two-factor?required=1");
   return ctx;
 }
