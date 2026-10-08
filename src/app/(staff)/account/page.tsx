@@ -1,6 +1,9 @@
 import type { Metadata } from "next";
 import { cookies, headers } from "next/headers";
+import { NAV } from "@/components/shell/nav";
+import { NavIcon } from "@/components/shell/nav-icons";
 import { ThemeToggle } from "@/components/shell/theme-toggle";
+import { can } from "@/server/authz/policy";
 import Link from "next/link";
 import { PageHeader, TopBar } from "@/components/shell/topbar";
 import { ROLE_LABELS } from "@/server/authz/catalog";
@@ -32,6 +35,22 @@ export default async function AccountPage() {
         <PageHeader title="Account" subtitle={`${ctx.label} · ${ctx.roles.map((r) => ROLE_LABELS[r]).join(", ")}`}>
           <SignOutButton />
         </PageHeader>
+
+        {/* Phones: the bottom bar has room for a few sections; the rest are listed here. */}
+        <nav aria-label="All sections" className="card p-2 md:hidden">
+          <ul className="grid grid-cols-2 gap-1">
+            {NAV.flatMap((sec) => sec.items)
+              .filter((i) => !i.mobile && (!i.need || can(ctx, i.need[0], i.need[1])))
+              .map((i) => (
+                <li key={i.href}>
+                  <Link href={i.href} className="flex min-h-[48px] items-center gap-2.5 rounded-[8px] px-3 text-[14px] font-medium hover:bg-surface-2">
+                    <NavIcon name={i.icon} className="size-[18px] text-ink-2" />
+                    {i.label}
+                  </Link>
+                </li>
+              ))}
+          </ul>
+        </nav>
 
         <section className="card p-5">
           <h2 className="text-[17px] font-semibold mb-3">Appearance</h2>

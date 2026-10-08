@@ -27,6 +27,7 @@ export const RESOURCE_LABELS: Record<Resource, string> = {
   report: "Reports",
   export: "Exports & downloads",
   audit: "Audit log",
+  minutes: "Board minutes",
   "admin.users": "Admin: users",
   "admin.roles": "Admin: roles & permissions",
   "admin.lists": "Admin: lists & data rules",

@@ -755,3 +755,65 @@ model ExportLog {
 
   @@index([userId, createdAt])
 }
+
+// ───────────────────────── Board minutes ─────────────────────────
+
+enum MeetingType {
+  CHURCH_BOARD
+  BUSINESS_MEETING
+  ELDERS_COUNCIL
+  NOMINATING_COMMITTEE
+  OTHER
+}
+
+enum MinutesStatus {
+  DRAFT
+  APPROVED
+}
+
+/// Minutes of a church board (or other governing) meeting. Files are the signed/typed minutes.
+model MeetingMinutes {
+  id          String        @id @default(cuid())
+  /// "CB/2026/07" — type prefix, year of the meeting, running number. Never reused.
+  reference   String        @unique
+  type        MeetingType   @default(CHURCH_BOARD)
+  title       String
+  heldOn      DateTime      @db.Date
+  /// "14:30", 24-hour, East Africa Time.
+  startTime   String?
+  venue       String?
+  chairperson String?
+  secretary   String?
+  attendance  Int?
+  /// Key decisions / resolutions in brief, for search and the register.
+  summary     String?
+  status      MinutesStatus @default(DRAFT)
+  /// Date the minutes were confirmed (usually at the next meeting).
+  approvedOn  DateTime?     @db.Date
+  createdById String
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+  deletedAt   DateTime?
+  files       MinutesFile[]
+
+  @@index([heldOn])
+  @@index([deletedAt])
+}
+
+model MinutesFile {
+  id           String         @id @default(cuid())
+  minutesId    String
+  minutes      MeetingMinutes @relation(fields: [minutesId], references: [id], onDelete: Cascade)
+  fileName     String
+  storageKey   String
+  mimeType     String
+  sizeBytes    Int
+  /// SHA-256 of the file as uploaded, shown so a printed copy can be checked against the record.
+  sha256       String
+  uploadedById String
+  uploadedAt   DateTime       @default(now())
+  deletedAt    DateTime?
+
+  @@index([minutesId])
+}
+

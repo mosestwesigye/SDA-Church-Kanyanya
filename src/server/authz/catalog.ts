@@ -47,6 +47,8 @@ export const CATALOG = {
   report: ["read"],
   export: ["run"],
   audit: ["read"],
+  // Church board / business meeting minutes.
+  minutes: ["read", "manage"],
   "admin.users": ["manage"],
   "admin.roles": ["manage"],
   "admin.lists": ["manage"],

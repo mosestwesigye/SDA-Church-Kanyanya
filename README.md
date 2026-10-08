@@ -80,6 +80,13 @@ Members sign in at `/login/phone` with the phone number on their record and a 6-
 - Approved fields are written through the audited member service with source `self-service`.
 - SMS goes through Africa's Talking (`AT_USERNAME`, `AT_API_KEY`, optional `AT_SENDER_ID`). In development the code is logged with the phone number masked.
 
+## Board minutes
+
+Board minutes (sidebar → Board minutes) keep the minutes of church board, business, elders' council and nominating committee meetings.
+- Each meeting gets a permanent reference such as `CB/2026/01` (type, year, running number), with date, time, venue, chairperson, secretary, attendance, key decisions and approval status.
+- Files: PDF, Word (.docx) or scanned images, up to 4 MB each, stored privately with a SHA-256 fingerprint. Every upload, change, approval, download and removal is in the audit log and on the record's History, with times in East Africa Time.
+- Access (editable in Admin → Roles): Clerk and Assistant Clerk record and manage; Pastor and Elders read; System Admin both.
+
 ## Offline use (PWA)
 
 The app is installable: it has a manifest, icons and a service worker (`public/sw.js`).

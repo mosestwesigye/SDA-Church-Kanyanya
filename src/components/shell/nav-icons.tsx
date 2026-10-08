@@ -40,6 +40,12 @@ const PATHS: Record<string, React.ReactNode> = {
       <path d="m3 12 9 4.5 9-4.5M3 16.5 12 21l9-4.5" />
     </>
   ),
+  minutes: (
+    <>
+      <path d="M7 3h7.5L19 7.5V20a1 1 0 0 1-1 1H7a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1Z" />
+      <path d="M14 3v5h5M9.5 12h6M9.5 15.5h6M9.5 8.5h2" />
+    </>
+  ),
   reports: (
     <>
       <path d="M6 3h8.5L19 7.5V21H6V3Z" />
