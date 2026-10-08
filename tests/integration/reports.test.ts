@@ -33,7 +33,16 @@ describe("report permissions", () => {
     const treasurer = await userWith(db, ["TREASURER"]);
     expect(availableReports(treasurer)).toEqual([]);
     await expect(buildReport(db, treasurer, "zones", parseReportParams("zones", {}))).rejects.toBeInstanceOf(ForbiddenError);
-    expect(availableReports(clerk)).toEqual(["quarterly", "status", "ministry-roster", "zones", "birthdays"]);
+    expect(availableReports(clerk)).toEqual([
+      "quarterly", "overview", "movements", "status", "age-groups", "ministry-roster", "zones", "families", "birthdays", "data-quality", "minutes",
+    ]);
+    // Families need sensitive access; minutes need minutes access.
+    const elder = await userWith(db, ["ELDER"]);
+    expect(availableReports(elder)).toContain("minutes");
+    const head = await userWith(db, ["MINISTRY_HEAD"], { ministryLabels: ["Youth"] });
+    expect(availableReports(head)).not.toContain("families");
+    expect(availableReports(head)).not.toContain("minutes");
+    await expect(buildReport(db, head, "minutes", parseReportParams("minutes", {}))).rejects.toBeInstanceOf(ForbiddenError);
   });
 
   it("elders can preview but not download (export is logged and needs export:run)", async () => {
@@ -123,6 +132,56 @@ describe("birthday report", () => {
     expect(rows.find((x) => x.memberId === full.memberId)).toMatchObject({ day: 14 });
     expect(rows.some((x) => x.memberId === yearOnly.memberId)).toBe(false);
     expect(rows.every((x, i) => i === 0 || Number(rows[i - 1]!.day) <= Number(x.day))).toBe(true);
+  });
+});
+
+describe("more reports", () => {
+  it("age groups place members by age and leave out the deceased", async () => {
+    const y = now.getUTCFullYear();
+    const kid = await createMember(db, clerk, { lastName: "Age", firstName: "Pathfinder", dobPrecision: "YEAR", dobYear: y - 12 });
+    const late = await createMember(db, clerk, { lastName: "Age", firstName: "Late", dobPrecision: "YEAR", dobYear: y - 12 });
+    await updateMember(db, clerk, late.id, { status: "DECEASED" });
+    const r = await buildReport(db, clerk, "age-groups", parseReportParams("age-groups", { group: "pathfinders" }));
+    const ids = r.sections.flatMap((s) => s.table?.rows.map((x) => x.memberId) ?? []);
+    expect(ids).toContain(kid.memberId);
+    expect(ids).not.toContain(late.memberId);
+    expect(r.sections[0]!.summary!.map((s) => s.label)).toEqual(["Pathfinders (10–15)"]);
+  });
+
+  it("membership changes cover a date range and count gains and losses", async () => {
+    const m = await createMember(db, clerk, { lastName: "Moves", firstName: "Range" });
+    await updateMember(db, clerk, m.id, { status: "ACTIVE" });
+    const req = await createStatusRequest(db, clerk, { memberId: m.id, type: "DEATH", reason: "Passed away", effectiveDate: now.toISOString().slice(0, 10) });
+    await decideStatusRequest(db, pastor, req.id, true);
+    const today = now.toISOString().slice(0, 10);
+    const r = await buildReport(db, clerk, "movements", parseReportParams("movements", { from: today, to: today, type: "DEATH" }));
+    const row = r.sections.find((s) => s.table)!.table!.rows.find((x) => x.memberId === m.memberId);
+    expect(row).toMatchObject({ type: "Death", direction: "Loss" });
+    expect(Number(r.sections[0]!.summary!.find((s) => s.label === "Losses from membership")!.value)).toBeGreaterThanOrEqual(1);
+  });
+
+  it("records needing attention list what is missing, least complete first", async () => {
+    const m = await createMember(db, clerk, { lastName: "Quality", firstName: "Sparse" });
+    const r = await buildReport(db, clerk, "data-quality", parseReportParams("data-quality", { below: "50" }));
+    const rows = r.sections.find((s) => s.table)!.table!.rows;
+    const row = rows.find((x) => x.memberId === m.memberId)!;
+    expect(String(row.missing)).toContain("Phone");
+    expect(rows.every((x, i) => i === 0 || parseInt(String(rows[i - 1]!.completeness)) <= parseInt(String(x.completeness)))).toBe(true);
+  });
+
+  it("every report renders as PDF and Excel", async () => {
+    for (const key of availableReports(clerk)) {
+      const r = await buildReport(db, clerk, key, parseReportParams(key, {}));
+      expect(Buffer.from((await reportPdf(r)).slice(0, 5)).toString()).toBe("%PDF-");
+      expect((await reportXlsx(r)).byteLength).toBeGreaterThan(0);
+    }
+  });
+
+  it("overview and families build for the clerk", async () => {
+    const o = await buildReport(db, clerk, "overview", parseReportParams("overview", {}));
+    expect(o.sections.map((s) => s.heading)).toContain("Membership status");
+    const f = await buildReport(db, clerk, "families", parseReportParams("families", {}));
+    expect(f.sections[0]!.heading).toBe("Summary");
   });
 });
 
