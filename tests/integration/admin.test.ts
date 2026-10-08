@@ -2,7 +2,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import type { Db } from "@/server/db";
 import { ForbiddenError, ValidationError } from "@/server/errors";
 import { addListItem, listItemsForAdmin, renameListItem, setListItemActive } from "@/server/admin/lists";
-import { permissionMatrix, setPermission, setRoleRequire2fa } from "@/server/admin/roles";
+import { permissionMatrix, setPermission } from "@/server/admin/roles";
 import { adminCreateUser, listUsers, resetUserTwoFactor, revokeSessions, setUserActive, updateUserAccess } from "@/server/admin/users";
 import { parseAuditQuery, searchAudit } from "@/server/audit/query";
 import { loadAuthContext } from "@/server/authz/context";
@@ -123,13 +123,14 @@ describe("permission matrix", () => {
   it("refuses to lock System Admin out of administration", async () => {
     const role = await db.role.findUniqueOrThrow({ where: { key: "SYSTEM_ADMIN" } });
     await expect(setPermission(db, admin, { roleId: role.id, resource: "admin.roles", action: "manage", scope: null })).rejects.toBeInstanceOf(ValidationError);
-    const clerkRole = await db.role.findUniqueOrThrow({ where: { key: "CHURCH_CLERK" } });
-    await expect(setRoleRequire2fa(db, admin, clerkRole.id, false)).rejects.toBeInstanceOf(ValidationError);
-    const elderRole = await db.role.findUniqueOrThrow({ where: { key: "ELDER" } });
-    await setRoleRequire2fa(db, admin, elderRole.id, true);
-    expect((await loadAuthContext(db, (await userWith(db, ["ELDER"])).userId)).requires2fa).toBe(true);
-    await setRoleRequire2fa(db, admin, elderRole.id, false);
-    expect(await lastAudit({ entity: "Role", entityId: "ELDER", field: "require2fa" })).toMatchObject({ newValue: false });
+  });
+
+  it("only System Administrators need two-step verification", async () => {
+    expect((await loadAuthContext(db, admin.userId)).requires2fa).toBe(true);
+    for (const role of ["CHURCH_CLERK", "PASTOR", "ELDER", "TREASURER"] as const) {
+      expect((await loadAuthContext(db, (await userWith(db, [role])).userId)).requires2fa).toBe(false);
+    }
+    expect((await loadAuthContext(db, (await userWith(db, ["CHURCH_CLERK", "SYSTEM_ADMIN"])).userId)).requires2fa).toBe(true);
   });
 });
 

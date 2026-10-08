@@ -1,7 +1,7 @@
 import Image from "next/image";
 
 const ASSURANCES = [
-  { title: "Two-step verification", text: "Staff accounts are protected with an authenticator app." },
+  { title: "Two-step verification", text: "Administrator accounts are protected with an authenticator app." },
   { title: "Every change on record", text: "A permanent audit trail shows who changed what, and when." },
   { title: "Personal data protected", text: "Handled under Uganda’s Data Protection and Privacy Act, 2019." },
 ];

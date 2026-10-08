@@ -50,7 +50,7 @@ describe("offline outbox sync", () => {
   });
 
   it("requires 2FA where the role demands it", async () => {
-    current.ctx = clerk; // Clerk without 2FA set up
+    current.ctx = await userWith(db, ["SYSTEM_ADMIN"]); // Admin without 2FA set up
     expect((await call({ clientId: crypto.randomUUID(), memberId: "x", version: 1, patch: {} })).status).toBe(403);
   });
 

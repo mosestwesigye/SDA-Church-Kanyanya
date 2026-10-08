@@ -76,16 +76,3 @@ export async function setPermission(db: Db, ctx: AuthContext, input: { roleId: s
     });
   });
 }
-
-/** Whether a role must use two-step verification. */
-export async function setRoleRequire2fa(db: Db, ctx: AuthContext, roleId: string, required: boolean) {
-  assertCan(ctx, "admin.security", "manage");
-  await db.$transaction(async (tx) => {
-    const role = await tx.role.findUnique({ where: { id: roleId } });
-    if (!role) throw new NotFoundError("Role not found.");
-    if (role.require2fa === required) return;
-    if (!required && (role.key === "SYSTEM_ADMIN" || role.key === "CHURCH_CLERK")) throw new ValidationError(`Two-step verification can’t be turned off for ${role.name}.`);
-    await tx.role.update({ where: { id: roleId }, data: { require2fa: required } });
-    await new AuditWriter(tx, actorFrom(ctx), "UI").log({ action: "SECURITY", entity: "Role", entityId: role.key, field: "require2fa", oldValue: role.require2fa, newValue: required });
-  });
-}

@@ -87,4 +87,5 @@ export function fieldGroupOf(field: string): MemberFieldGroup | null {
 }
 
 /** Roles for which TOTP 2FA is mandatory. */
-export const REQUIRE_2FA: RoleKey[] = ["SYSTEM_ADMIN", "CHURCH_CLERK"];
+/** Only System Administrators use an authenticator app; everyone else signs in with a password (members by SMS code). */
+export const REQUIRE_2FA: RoleKey[] = ["SYSTEM_ADMIN"];

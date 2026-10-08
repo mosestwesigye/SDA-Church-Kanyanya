@@ -1,5 +1,5 @@
 import type { DbOrTx } from "../db";
-import type { RoleKey, Scope } from "./catalog";
+import { REQUIRE_2FA, type RoleKey, type Scope } from "./catalog";
 import { buildGrantMap, type AuthContext } from "./policy";
 
 /** Load roles, grants and ministry scope for a user from the database. */
@@ -28,7 +28,7 @@ export async function loadAuthContext(
     memberId: user.memberId,
     sessionId: extra.sessionId ?? null,
     ipAddress: extra.ipAddress ?? null,
-    requires2fa: user.roles.some((r) => r.role.require2fa),
+    requires2fa: roles.some((r) => REQUIRE_2FA.includes(r)),
     twoFactorEnabled: Boolean(user.twoFactorEnabled),
     active: user.active,
   };

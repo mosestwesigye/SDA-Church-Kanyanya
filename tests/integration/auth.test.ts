@@ -63,11 +63,11 @@ describe("staff sign-in", () => {
 });
 
 describe("TOTP two-factor", () => {
-  it("is required for Admin and Clerk roles", async () => {
-    const clerk = await createStaffUser(db, SYSTEM_ACTOR, { name: "Req", email: "req2fa@test.example.org", password: PASSWORD, roles: ["CHURCH_CLERK"] });
-    const elder = await createStaffUser(db, SYSTEM_ACTOR, { name: "Opt", email: "opt2fa@test.example.org", password: PASSWORD, roles: ["ELDER"] });
-    expect((await loadAuthContext(db, clerk.id)).requires2fa).toBe(true);
-    expect((await loadAuthContext(db, elder.id)).requires2fa).toBe(false);
+  it("is required for System Admins only", async () => {
+    const admin = await createStaffUser(db, SYSTEM_ACTOR, { name: "Req", email: "req2fa@test.example.org", password: PASSWORD, roles: ["SYSTEM_ADMIN"] });
+    const clerk = await createStaffUser(db, SYSTEM_ACTOR, { name: "Opt", email: "opt2fa@test.example.org", password: PASSWORD, roles: ["CHURCH_CLERK"] });
+    expect((await loadAuthContext(db, admin.id)).requires2fa).toBe(true);
+    expect((await loadAuthContext(db, clerk.id)).requires2fa).toBe(false);
   });
 
   it("enrols with a standard authenticator code and then demands it at sign-in", async () => {

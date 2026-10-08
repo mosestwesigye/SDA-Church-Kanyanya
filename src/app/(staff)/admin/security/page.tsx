@@ -1,7 +1,5 @@
 import type { Metadata } from "next";
-import { Require2fa } from "@/components/admin/matrix-widgets";
 import { RevokeSession } from "@/components/admin/session-widgets";
-import { ROLE_LABELS, type RoleKey } from "@/server/authz/catalog";
 import { SESSION_IDLE_MINUTES } from "@/server/auth/auth";
 import { requirePermission } from "@/server/auth/session";
 import { regionCheck } from "@/server/admin/regions";
@@ -21,8 +19,7 @@ const daysAgo = (n: number) => new Date(Date.now() - n * 86400_000);
 export default async function SecurityPage() {
   const ctx = await requirePermission("admin.security", "manage");
   const since = daysAgo(7);
-  const [roles, sessions, failed, events] = await Promise.all([
-    db.role.findMany({ orderBy: { createdAt: "asc" } }),
+  const [sessions, failed, events] = await Promise.all([
     db.session.findMany({ where: { expiresAt: { gt: new Date() } }, include: { user: { select: { name: true } } }, orderBy: { updatedAt: "desc" }, take: 100 }),
     db.auditLog.count({ where: { action: "LOGIN_FAILED", at: { gte: since } } }),
     db.auditLog.findMany({ where: { action: { in: ["SECURITY", "LOGIN_FAILED"] } }, orderBy: { id: "desc" }, take: 12 }),
@@ -75,10 +72,7 @@ export default async function SecurityPage() {
         <RegionCard />
         <section className="card p-5">
           <h2 className="text-[17px] font-semibold">Two-step verification</h2>
-          <p className="mb-2 mt-1 text-[14px] text-ink-2">Roles that must use an authenticator app. Members sign in with an SMS code instead.</p>
-          {roles.filter((r) => r.key !== "MEMBER").map((r) => (
-            <Require2fa key={r.id} roleId={r.id} name={ROLE_LABELS[r.key as RoleKey] ?? r.name} required={r.require2fa} fixed={r.key === "SYSTEM_ADMIN" || r.key === "CHURCH_CLERK"} />
-          ))}
+          <p className="mt-1 text-[14px] text-ink-2">Required for System Administrators only. Other staff sign in with their password, and members with an SMS code.</p>
         </section>
         <section className="card p-5">
           <h2 className="text-[17px] font-semibold">Last 7 days</h2>

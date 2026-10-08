@@ -5,7 +5,7 @@ import type { ListType } from "@/generated/prisma/client";
 import type { RoleKey, Scope } from "@/server/authz/catalog";
 import { attempt } from "@/server/action-result";
 import { addListItem, renameListItem, setListItemActive } from "@/server/admin/lists";
-import { setPermission, setRoleRequire2fa } from "@/server/admin/roles";
+import { setPermission } from "@/server/admin/roles";
 import { adminCreateUser, resetUserTwoFactor, revokeSessions, setUserActive, updateUserAccess } from "@/server/admin/users";
 import { requireContext, requirePermission } from "@/server/auth/session";
 import { db } from "@/server/db";
@@ -69,13 +69,6 @@ export async function setPermissionAction(roleId: string, resource: string, acti
   const ctx = await requireContext();
   return attempt(async () => {
     await setPermission(db, ctx, { roleId, resource, action, scope });
-  });
-}
-
-export async function setRequire2faAction(roleId: string, required: boolean) {
-  const ctx = await requireContext();
-  return attempt(async () => {
-    await setRoleRequire2fa(db, ctx, roleId, required);
   });
 }
 

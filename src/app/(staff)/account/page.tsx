@@ -38,14 +38,14 @@ export default async function AccountPage() {
           <ThemeToggle current={theme} />
         </section>
 
-        <section className="card p-5">
+        {(ctx.requires2fa || ctx.twoFactorEnabled) && <section className="card p-5">
           <h2 className="text-[17px] font-semibold">Two-step verification</h2>
           <p className="text-ink-2 mt-1">
             {ctx.twoFactorEnabled ? "On — a code from your authenticator app is needed at sign-in." : "Off."}
             {ctx.requires2fa && " Required for your role."}
           </p>
           {!ctx.twoFactorEnabled && <Link href="/account/two-factor" className="btn btn-primary mt-4">Set up</Link>}
-        </section>
+        </section>}
 
         <section className="card">
           <div className="p-5 border-b border-line">

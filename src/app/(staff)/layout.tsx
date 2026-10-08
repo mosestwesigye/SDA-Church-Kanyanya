@@ -68,10 +68,10 @@ export default async function StaffLayout({ children }: { children: React.ReactN
               <NavIcon name="account" className="size-[18px]" />
             </Link>
           </div>
-          <Link href="/account" className="mt-2 flex items-center gap-2 rounded-[6px] px-1 text-[12px] text-sidebar-muted hover:text-white">
+          {ctx.requires2fa && <Link href="/account" className="mt-2 flex items-center gap-2 rounded-[6px] px-1 text-[12px] text-sidebar-muted hover:text-white">
             <span aria-hidden className={`size-1.5 rounded-full ${ctx.twoFactorEnabled ? "bg-[#6fcf97]" : "bg-[#e9b44c]"}`} />
             {ctx.twoFactorEnabled ? "Two-step verification on" : "Two-step verification off — turn on"}
-          </Link>
+          </Link>}
         </div>
       </aside>
 

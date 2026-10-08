@@ -18,7 +18,7 @@ pnpm db:bootstrap                 # roles, permission matrix, controlled lists, 
 pnpm dev
 ```
 
-The first System Admin must set up two-step verification at first sign-in (also required for Church Clerks).
+The first System Admin must set up two-step verification at first sign-in. Only System Admins use an authenticator app; other staff sign in with email and password.
 
 ### Loading the clerk's register
 
@@ -93,12 +93,12 @@ The app is installable: it has a manifest, icons and a service worker (`public/s
 
 ## Admin
 
-Admin → Users, Roles & permissions (editable matrix with All / Own ministries / Own record scopes), Lists, Data rules, Security (sessions, per-role 2FA, failed sign-ins) and Audit log.
+Admin → Users, Roles & permissions (editable matrix with All / Own ministries / Own record scopes), Lists, Data rules, Security (sessions, failed sign-ins) and Audit log.
 
 - Every change is audited.
 - System Admin can't remove its own access-management permissions.
 - The last active admin can't be removed.
-- Two-step verification stays mandatory for Admin and Clerk.
+- Two-step verification is mandatory for System Admins only.
 
 ## Security and privacy model
 
@@ -107,4 +107,4 @@ Admin → Users, Roles & permissions (editable matrix with All / Own ministries 
 - **Audit log** is append-only. A database trigger rejects `UPDATE`, `DELETE` and `TRUNCATE`. Every write goes through `AuditWriter` in the same transaction as the change.
 - **Member IDs** are permanent. A trigger derives `SDAK/M####` from a sequence, blocks changes and blocks hard deletes (purge wipes personal data and keeps a tombstone).
 - **Headers**: CSP, `X-Frame-Options: DENY`, `nosniff`, a strict referrer policy, a permissions policy and HSTS in production (`next.config.ts`).
-- **Auth**: argon2id passwords, TOTP 2FA (required for Admin and Clerk), 30-minute idle timeout, device list with revoke, database-backed rate limiting, password reset by email.
+- **Auth**: argon2id passwords, TOTP 2FA (System Admins only), 30-minute idle timeout, device list with revoke, database-backed rate limiting, password reset by email.
