@@ -2,8 +2,8 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import type { Db } from "@/server/db";
 import { daysToBirthday, dashboardStats, upcomingBirthdays } from "@/server/dashboard/stats";
 import { ForbiddenError, ValidationError } from "@/server/errors";
-import { addToHousehold, createHousehold, getHousehold, householdOptions, joinHousehold, removeFromHousehold, spouseHouseholdSuggestions } from "@/server/households/service";
-import { addMinistry, createMember, updateMember } from "@/server/members/service";
+import { addToHousehold, createHousehold, listHouseholds, getHousehold, householdOptions, joinHousehold, removeFromHousehold } from "@/server/households/service";
+import { addMinistry, createMember } from "@/server/members/service";
 import { listMinistries, ministryRoster, setMinistryRole } from "@/server/ministries/service";
 import { listId, testDb, userWith } from "./helpers";
 
@@ -91,37 +91,24 @@ describe("ministries", () => {
 describe("households", () => {
   it("needs household permission plus sensitive access", async () => {
     const t = await userWith(db, ["TREASURER"]);
-    await expect(spouseHouseholdSuggestions(db, t)).rejects.toBeInstanceOf(ForbiddenError);
+    await expect(listHouseholds(db, t, "FAMILY")).rejects.toBeInstanceOf(ForbiddenError);
     const elder = await userWith(db, ["ELDER"]);
     const head = await createMember(db, clerk, { lastName: "Home", firstName: "Head" });
     await expect(createHousehold(db, elder, { name: "Home household", headMemberId: head.id })).rejects.toBeInstanceOf(ForbiddenError);
   });
 
-  it("creates a household, links spouses on both records (audited), and cleans up when emptied", async () => {
-    const head = await createMember(db, clerk, { lastName: "Wasswa", firstName: "Henry" });
-    const wife = await createMember(db, clerk, { lastName: "Babirye", firstName: "Joan" });
-    const child = await createMember(db, clerk, { lastName: "Wasswa", firstName: "Junior" });
-    const h = await createHousehold(db, clerk, { name: "Wasswa household", headMemberId: head.id });
-    await expect(addToHousehold(db, clerk, { householdId: h.id, memberId: child.id, relation: "HEAD" })).rejects.toBeInstanceOf(ValidationError);
-    await addToHousehold(db, clerk, { householdId: h.id, memberId: wife.id, relation: "SPOUSE", linkSpouse: true });
-    await addToHousehold(db, clerk, { householdId: h.id, memberId: child.id, relation: "CHILD" });
-
-    const [hd, wf] = await Promise.all([db.member.findUniqueOrThrow({ where: { id: head.id } }), db.member.findUniqueOrThrow({ where: { id: wife.id } })]);
-    expect(hd).toMatchObject({ maritalStatus: "MARRIED", spouseMemberId: wife.id });
-    expect(wf).toMatchObject({ maritalStatus: "MARRIED", spouseMemberId: head.id });
-    expect(await db.auditLog.count({ where: { memberId: wife.id, field: "spouseMemberId" } })).toBe(1);
-    expect((await getHousehold(db, clerk, h.id)).members.map((m) => m.relation)).toEqual(["HEAD", "SPOUSE", "CHILD"]);
-
-    for (const id of [child.id, wife.id, head.id]) await removeFromHousehold(db, clerk, h.id, id);
+  it("creates a family with a leader and members, and cleans up when emptied", async () => {
+    const leader = await createMember(db, clerk, { lastName: "Wasswa", firstName: "Henry" });
+    const a = await createMember(db, clerk, { lastName: "Babirye", firstName: "Joan" });
+    const b = await createMember(db, clerk, { lastName: "Wasswa", firstName: "Junior" });
+    const h = await createHousehold(db, clerk, { kind: "FAMILY", name: `Bethel ${Date.now().toString(36)}`, headMemberId: leader.id });
+    await expect(addToHousehold(db, clerk, { householdId: h.id, memberId: b.id, relation: "HEAD" })).rejects.toBeInstanceOf(ValidationError);
+    await expect(addToHousehold(db, clerk, { householdId: h.id, memberId: b.id, relation: "CHILD" })).rejects.toBeInstanceOf(ValidationError);
+    await addToHousehold(db, clerk, { householdId: h.id, memberId: a.id, relation: "OTHER" });
+    await addToHousehold(db, clerk, { householdId: h.id, memberId: b.id, relation: "OTHER" });
+    expect((await getHousehold(db, clerk, h.id)).members.map((m) => m.relation)).toEqual(["HEAD", "OTHER", "OTHER"]);
+    for (const id of [b.id, a.id, leader.id]) await removeFromHousehold(db, clerk, h.id, id);
     expect(await db.household.findUnique({ where: { id: h.id } })).toBeNull();
-  });
-
-  it("suggests married couples without a household", async () => {
-    const a = await createMember(db, clerk, { lastName: "Pair", firstName: "A" });
-    const b = await createMember(db, clerk, { lastName: "Pair", firstName: "B", maritalStatus: "MARRIED", spouseMemberId: a.id });
-    await updateMember(db, clerk, a.id, { maritalStatus: "MARRIED", spouseMemberId: b.id });
-    const s = await spouseHouseholdSuggestions(db, clerk, 500);
-    expect(s.filter((x) => [a.id, b.id].includes(x.id))).toHaveLength(1);
   });
 
   it("creates a cell without a leader, rejects duplicate names, and audits it", async () => {

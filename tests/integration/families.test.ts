@@ -1,7 +1,7 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import type { Db } from "@/server/db";
 import { ValidationError } from "@/server/errors";
-import { suggestFamilyName } from "@/lib/households";
+import { relationLabel } from "@/lib/households";
 import { addToHousehold, createHousehold, getHousehold, listHouseholds, renameHousehold } from "@/server/households/service";
 import { createMember } from "@/server/members/service";
 import { testDb, userWith } from "./helpers";
@@ -21,21 +21,14 @@ afterAll(async () => {
 const person = (firstName: string, gender: "MALE" | "FEMALE" = "MALE") => createMember(db, clerk, { lastName: `Fam${tag}`, firstName, gender });
 
 describe("families module", () => {
-  it("creates a family from husband and wife, linking them as spouses", async () => {
-    const husband = await person("Moses");
-    const wife = await person("Ruth", "FEMALE");
-    const name = suggestFamilyName(husband, wife);
-    expect(name).toBe(`Mr and Mrs Fam${tag} Moses`);
-    const h = await createHousehold(db, clerk, { kind: "FAMILY", name, headMemberId: husband.id, spouseMemberId: wife.id });
+  it("works like a cell: a leader and members, with family wording", async () => {
+    const leader = await person("Moses");
+    const h = await createHousehold(db, clerk, { kind: "FAMILY", name: `Bethel Family ${tag}`, headMemberId: leader.id });
+    const m = await person("Ruth", "FEMALE");
+    await addToHousehold(db, clerk, { householdId: h.id, memberId: m.id, relation: "OTHER" });
     const got = await getHousehold(db, clerk, h.id);
-    expect(got.kind).toBe("FAMILY");
-    expect(got.members.map((m) => [m.member.firstName, m.relation])).toEqual([["Moses", "HEAD"], ["Ruth", "SPOUSE"]]);
-    const [mh, mw] = await Promise.all([db.member.findUniqueOrThrow({ where: { id: husband.id } }), db.member.findUniqueOrThrow({ where: { id: wife.id } })]);
-    expect([mh.spouseMemberId, mw.spouseMemberId, mh.maritalStatus]).toEqual([wife.id, husband.id, "MARRIED"]);
-
-    const child = await person("Junior");
-    await addToHousehold(db, clerk, { householdId: h.id, memberId: child.id, relation: "CHILD" });
-    expect((await getHousehold(db, clerk, h.id)).members).toHaveLength(3);
+    expect(got.members.map((x) => [x.member.firstName, relationLabel(got.kind, x.relation)])).toEqual([["Moses", "Family leader"], ["Ruth", "Family member"]]);
+    await expect(addToHousehold(db, clerk, { householdId: h.id, memberId: (await person("Kid")).id, relation: "CHILD" })).rejects.toBeInstanceOf(ValidationError);
   });
 
   it("allows one family and one cell per member, and only cell roles in a cell", async () => {
@@ -45,8 +38,6 @@ describe("families module", () => {
     await expect(addToHousehold(db, clerk, { householdId: f2.id, memberId: m.id, relation: "OTHER" })).rejects.toBeInstanceOf(ValidationError);
     const cell = await createHousehold(db, clerk, { kind: "CELL", name: `Cell ${tag}` });
     await addToHousehold(db, clerk, { householdId: cell.id, memberId: m.id, relation: "OTHER" });
-    const kid = await person("Kid");
-    await expect(addToHousehold(db, clerk, { householdId: cell.id, memberId: kid.id, relation: "CHILD" })).rejects.toBeInstanceOf(ValidationError);
     expect(f1.kind).toBe("FAMILY");
   });
 

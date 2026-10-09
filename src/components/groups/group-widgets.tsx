@@ -4,7 +4,7 @@ import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
 import { addToMinistryAction, removeFromMinistryAction, setRoleAction } from "@/app/(staff)/ministries/actions";
 import { addMemberAction, createHouseholdAction, removeMemberAction, renameHouseholdAction, setRelationAction } from "@/app/(staff)/families/actions";
-import { RELATIONS_BY_KIND, relationLabel, suggestFamilyName } from "@/lib/households";
+import { RELATIONS_BY_KIND, relationLabel } from "@/lib/households";
 import { MemberPicker, PickedMember, type Picked } from "@/components/members/member-picker";
 import type { Option } from "@/components/members/types";
 import { toast } from "@/lib/toast";
@@ -92,72 +92,25 @@ type Kind = "FAMILY" | "CELL";
 const roleOptions = (kind: Kind, hasHead: boolean) =>
   RELATIONS_BY_KIND[kind].filter((r) => r !== "HEAD" || !hasHead).map((r) => ({ id: r, label: relationLabel(kind, r) }));
 
-/** New family: husband and wife picked from the register, name suggested as "Mr and Mrs …". */
-export function NewFamily({ suggestion }: { suggestion?: { head: Picked; spouse: Picked } }) {
-  const [head, setHead] = useState<Picked | null>(suggestion?.head ?? null);
-  const [spouse, setSpouse] = useState<Picked | null>(suggestion?.spouse ?? null);
-  const [name, setName] = useState(suggestion ? suggestFamilyName(suggestion.head, suggestion.spouse) : "");
-  const [edited, setEdited] = useState(false);
-  const [link, setLink] = useState(true);
-  const { pending, msg, run } = useRun();
-  const pick = (h: Picked | null, s: Picked | null) => {
-    setHead(h);
-    setSpouse(s);
-    if (!edited) setName(suggestFamilyName(h, s));
-  };
-  return (
-    <div className="space-y-3">
-      {head ? (
-        <PickedMember label="Husband / head of family" member={head} onClear={() => pick(null, spouse)} />
-      ) : (
-        <MemberPicker label="Husband / head of family" onPick={(m) => pick(m, spouse)} excludeIds={spouse ? [spouse.id] : []} />
-      )}
-      {spouse ? (
-        <PickedMember label="Wife / spouse" member={spouse} onClear={() => pick(head, null)} />
-      ) : (
-        <MemberPicker label="Wife / spouse (optional)" onPick={(m) => pick(head, m)} excludeIds={head ? [head.id] : []} />
-      )}
-      <label className="block">
-        <span className="field-label">Family name <span className="text-error" aria-hidden>*</span></span>
-        <input className="input" value={name} onChange={(e) => (setName(e.target.value), setEdited(true))} placeholder="e.g. Mr and Mrs Twesigye Moses" maxLength={80} />
-        <span className="mt-1 block text-[12px] text-ink-3">Suggested from the husband’s name; you can change it.</span>
-      </label>
-      {head && spouse && (
-        <label className="flex min-h-[40px] items-center gap-2 text-[14px]">
-          <input type="checkbox" className="size-4" checked={link} onChange={(e) => setLink(e.target.checked)} />
-          Set both as Married and link them as spouses
-        </label>
-      )}
-      <button
-        type="button"
-        className="btn btn-primary w-full"
-        disabled={name.trim().length < 2 || pending}
-        onClick={() => run(() => createHouseholdAction({ kind: "FAMILY", name, headMemberId: head?.id, spouseMemberId: spouse?.id, linkSpouses: link }))}
-      >
-        {pending ? "Creating…" : "Create family"}
-      </button>
-      <Msg msg={msg} />
-    </div>
-  );
-}
-
-export function NewCell() {
+/** New family or cell: a name and, if known, its leader. */
+export function NewGroup({ kind }: { kind: Kind }) {
   const [leader, setLeader] = useState<Picked | null>(null);
   const [name, setName] = useState("");
   const { pending, msg, run } = useRun();
+  const one = kind === "FAMILY" ? "family" : "cell";
   return (
     <div className="space-y-3">
       <label className="block">
-        <span className="field-label">Cell name <span className="text-error" aria-hidden>*</span></span>
-        <input className="input" value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. Kanyanya Cell 3" maxLength={80} />
+        <span className="field-label">{kind === "FAMILY" ? "Family name" : "Cell name"} <span className="text-error" aria-hidden>*</span></span>
+        <input className="input" value={name} onChange={(e) => setName(e.target.value)} placeholder={kind === "FAMILY" ? "e.g. Bethel Family" : "e.g. Kanyanya Cell 3"} maxLength={80} />
       </label>
       {leader ? (
-        <PickedMember label="Cell leader" member={leader} onClear={() => setLeader(null)} />
+        <PickedMember label={relationLabel(kind, "HEAD")} member={leader} onClear={() => setLeader(null)} />
       ) : (
-        <MemberPicker label="Cell leader (optional)" onPick={setLeader} />
+        <MemberPicker label={`${relationLabel(kind, "HEAD")} (optional)`} onPick={setLeader} />
       )}
-      <button type="button" className="btn btn-primary w-full" disabled={name.trim().length < 2 || pending} onClick={() => run(() => createHouseholdAction({ kind: "CELL", name, headMemberId: leader?.id }))}>
-        {pending ? "Creating…" : "Create cell"}
+      <button type="button" className="btn btn-primary w-full" disabled={name.trim().length < 2 || pending} onClick={() => run(() => createHouseholdAction({ kind, name, headMemberId: leader?.id }))}>
+        {pending ? "Creating…" : `Create ${one}`}
       </button>
       <Msg msg={msg} />
     </div>
@@ -179,14 +132,12 @@ export function RenameHousehold({ id, name: current, kind }: { id: string; name:
   );
 }
 
-export function AddHouseholdMember({ kind, householdId, hasHead, hasSpouse = false, memberIds = [] }: { kind: Kind; householdId: string; hasHead: boolean; hasSpouse?: boolean; memberIds?: string[] }) {
+export function AddHouseholdMember({ kind, householdId, hasHead, memberIds = [] }: { kind: Kind; householdId: string; hasHead: boolean; memberIds?: string[] }) {
   const [picked, setPicked] = useState<Picked | null>(null);
-  const defaultRole = !hasHead ? "HEAD" : kind === "FAMILY" ? (hasSpouse ? "CHILD" : "SPOUSE") : "OTHER";
-  const [chosen, setChosen] = useState(defaultRole);
+  const [chosen, setChosen] = useState(hasHead ? "OTHER" : "HEAD");
   const options = roleOptions(kind, hasHead);
-  // Once a head exists (e.g. just added), "Head" is no longer offered.
+  // Once a leader exists (e.g. just added), "Leader" is no longer offered.
   const relation = options.some((o) => o.id === chosen) ? chosen : options[0]!.id;
-  const [linkSpouse, setLinkSpouse] = useState(true);
   const { pending, msg, run } = useRun();
   return (
     <div className="space-y-3">
@@ -201,17 +152,11 @@ export function AddHouseholdMember({ kind, householdId, hasHead, hasSpouse = fal
           {options.map((r) => <option key={r.id} value={r.id}>{r.label}</option>)}
         </select>
       </label>
-      {kind === "FAMILY" && relation === "SPOUSE" && hasHead && (
-        <label className="flex min-h-[44px] items-center gap-2 text-[14px]">
-          <input type="checkbox" className="size-4" checked={linkSpouse} onChange={(e) => setLinkSpouse(e.target.checked)} />
-          Also set Married and link them as spouses on both records
-        </label>
-      )}
       <button
         type="button"
         className="btn btn-primary w-full"
         disabled={!picked || pending}
-        onClick={() => run(() => addMemberAction(householdId, picked!.id, relation as never, kind === "FAMILY" && relation === "SPOUSE" && linkSpouse), () => setPicked(null))}
+        onClick={() => run(() => addMemberAction(householdId, picked!.id, relation as never), () => setPicked(null))}
       >
         {pending ? "Saving…" : picked ? `Add ${picked.firstName} ${picked.lastName}` : "Choose a member first"}
       </button>

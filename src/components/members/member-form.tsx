@@ -474,7 +474,7 @@ function HouseholdPicker({ v, set, households, current }: { v: FormValues; set: 
     set("householdChoice", value);
     const k = kindOfChoice(value, households);
     const allowed = RELATIONS_BY_KIND[k].filter((r) => r !== "HEAD" || !households.find((h) => h.id === value)?.hasHead);
-    if (!allowed.includes(v.householdRelation as never)) set("householdRelation", k === "CELL" ? "OTHER" : (allowed.includes("CHILD") ? "CHILD" : allowed[0]!));
+    if (!allowed.includes(v.householdRelation as never)) set("householdRelation", allowed.includes("OTHER") ? "OTHER" : allowed[0]!);
   };
   const group = (k: HhKind, title: string) => {
     const list = choices.filter((h) => h.kind === k);
@@ -508,7 +508,7 @@ function HouseholdPicker({ v, set, households, current }: { v: FormValues; set: 
           label={v.householdChoice === NEW_FAMILY ? "New family name" : "New cell name"}
           value={v.householdNewName}
           onChange={(x) => set("householdNewName", x)}
-          placeholder={v.householdChoice === NEW_FAMILY ? "e.g. Mr and Mrs Twesigye Moses" : "e.g. Kanyanya Cell 3"}
+          placeholder={v.householdChoice === NEW_FAMILY ? "e.g. Bethel Family" : "e.g. Kanyanya Cell 3"}
           maxLength={80}
         />
       )}

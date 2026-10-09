@@ -17,7 +17,7 @@ function refresh(id?: string) {
   }
 }
 
-export async function createHouseholdAction(input: { kind: HouseholdKind; name: string; headMemberId?: string; spouseMemberId?: string; linkSpouses?: boolean }) {
+export async function createHouseholdAction(input: { kind: HouseholdKind; name: string; headMemberId?: string }) {
   const r = await attempt<{ id: string }>(async () => {
     const ctx = await requireContext();
     const h = await createHousehold(db, ctx, input);
@@ -26,7 +26,7 @@ export async function createHouseholdAction(input: { kind: HouseholdKind; name: 
   if (r.ok) {
     refresh();
     const k = KINDS[input.kind];
-    await flash("success", `${k.title} created`, input.kind === "FAMILY" ? "Now add the children and other family members." : "Now add the cell members.");
+    await flash("success", `${k.title} created`, `Now add the ${k.one} members.`);
     redirect(`${k.path}/${r.data!.id}`);
   }
   return r;
@@ -41,12 +41,12 @@ export async function renameHouseholdAction(id: string, name: string) {
   });
 }
 
-export async function addMemberAction(householdId: string, memberId: string, relation: HouseholdRelation, linkSpouse: boolean) {
+export async function addMemberAction(householdId: string, memberId: string, relation: HouseholdRelation) {
   return attempt(async () => {
     const ctx = await requireContext();
-    await addToHousehold(db, ctx, { householdId, memberId, relation, linkSpouse });
+    await addToHousehold(db, ctx, { householdId, memberId, relation });
     refresh(householdId);
-    return { message: linkSpouse ? "Added and linked as spouses on both records." : "Member added." };
+    return { message: "Member added." };
   });
 }
 

@@ -4,7 +4,7 @@ import { AuditWriter } from "../audit/audit";
 import { assertCan, can, memberScopeWhere, type AuthContext } from "../authz/policy";
 import type { Db, DbOrTx } from "../db";
 import { ForbiddenError, NotFoundError, ValidationError } from "../errors";
-import { actorFrom, updateMember } from "../members/service";
+import { actorFrom } from "../members/service";
 import { KINDS, RELATIONS_BY_KIND, relationLabel } from "@/lib/households";
 
 export { KINDS, RELATIONS_BY_KIND, RELATION_LABELS, relationLabel } from "@/lib/households";
@@ -80,9 +80,6 @@ const createInput = z.object({
   kind: kindSchema,
   name: z.string().trim().min(2, "Enter a name").max(80),
   headMemberId: z.string().min(1).optional(),
-  /** Families only: the wife / spouse, added with the head. */
-  spouseMemberId: z.string().min(1).optional(),
-  linkSpouses: z.boolean().default(true),
 });
 
 /** A member belongs to at most one family and at most one cell. */
@@ -95,32 +92,17 @@ export async function createHousehold(db: Db, ctx: AuthContext, input: z.input<t
   assertCan(ctx, "household", "update");
   assertRead(ctx);
   const v = createInput.parse(input);
-  // A family or cell can start without a head or leader; one can be added later.
+  // A family or cell can start without a leader; one can be added later.
   const head = v.headMemberId ? await scopedMember(db, ctx, v.headMemberId) : null;
-  const spouse = v.kind === "FAMILY" && v.spouseMemberId ? await scopedMember(db, ctx, v.spouseMemberId) : null;
-  if (head && spouse && head.id === spouse.id) throw new ValidationError("Choose two different people for husband and wife.");
   if (await db.household.findFirst({ where: { kind: v.kind, name: { equals: v.name, mode: "insensitive" } } })) {
     throw new ValidationError(`A ${KINDS[v.kind].one} called “${v.name}” already exists.`, { name: "Already exists" });
   }
-  for (const m of [head, spouse]) if (m) await assertNotInAnother(db, v.kind, m);
-  const h = await db.$transaction(async (tx) => {
-    const created = await tx.household.create({
-      data: {
-        kind: v.kind,
-        name: v.name,
-        members: { create: [...(head ? [{ memberId: head.id, relation: "HEAD" as const }] : []), ...(spouse ? [{ memberId: spouse.id, relation: "SPOUSE" as const }] : [])] },
-      },
-    });
-    const audit = new AuditWriter(tx, actorFrom(ctx), "UI");
-    await audit.log({ action: "CREATE", entity: "Household", entityId: created.id, memberId: head?.id ?? null, newValue: { kind: v.kind, name: created.name, ...(head ? { relation: "HEAD" } : {}) } });
-    if (spouse) await audit.log({ action: "CREATE", entity: "Household", entityId: created.id, memberId: spouse.id, field: "household", newValue: `${created.name} · ${relationLabel(v.kind, "SPOUSE")}` });
-    return created;
+  if (head) await assertNotInAnother(db, v.kind, head);
+  return db.$transaction(async (tx) => {
+    const h = await tx.household.create({ data: { kind: v.kind, name: v.name, ...(head ? { members: { create: { memberId: head.id, relation: "HEAD" } } } : {}) } });
+    await new AuditWriter(tx, actorFrom(ctx), "UI").log({ action: "CREATE", entity: "Household", entityId: h.id, memberId: head?.id ?? null, newValue: { kind: v.kind, name: h.name, ...(head ? { relation: "HEAD" } : {}) } });
+    return h;
   });
-  if (head && spouse && v.linkSpouses && (head.spouseMemberId !== spouse.id || spouse.spouseMemberId !== head.id)) {
-    await updateMember(db, ctx, spouse.id, { maritalStatus: "MARRIED", spouseMemberId: head.id }, { note: `Linked as spouse in ${h.name}` });
-    await updateMember(db, ctx, head.id, { maritalStatus: "MARRIED", spouseMemberId: spouse.id }, { note: `Linked as spouse in ${h.name}` });
-  }
-  return h;
 }
 
 export async function renameHousehold(db: Db, ctx: AuthContext, id: string, nameInput: string) {
@@ -173,14 +155,9 @@ const addInput = z.object({
   householdId: z.string(),
   memberId: z.string(),
   relation: z.enum(["HEAD", "SPOUSE", "CHILD", "DEPENDANT", "OTHER"]),
-  linkSpouse: z.boolean().default(false),
 });
 
-/**
- * Add a member to a household. With `linkSpouse`, a SPOUSE is also linked to
- * the household head as spouse on both records (through the audited member
- * service, so the Spouse field and audit log stay in step).
- */
+/** Add a member to a family or cell. */
 export async function addToHousehold(db: Db, ctx: AuthContext, input: z.input<typeof addInput>) {
   assertCan(ctx, "household", "update");
   assertRead(ctx);
@@ -195,12 +172,7 @@ export async function addToHousehold(db: Db, ctx: AuthContext, input: z.input<ty
     await tx.householdMember.create({ data: { householdId: h.id, memberId: m.id, relation: v.relation } });
     await new AuditWriter(tx, actorFrom(ctx), "UI").log({ action: "CREATE", entity: "Household", entityId: h.id, memberId: m.id, field: "household", newValue: `${h.name} · ${relationLabel(h.kind, v.relation)}` });
   });
-  if (v.relation === "SPOUSE" && v.linkSpouse) {
-    const head = h.members.find((x) => x.relation === "HEAD")?.member;
-    if (!head) throw new ValidationError("Add a head first to link spouses.");
-    await updateMember(db, ctx, m.id, { maritalStatus: "MARRIED", spouseMemberId: head.id }, { note: `Linked as spouse in household ${h.name}` });
-    await updateMember(db, ctx, head.id, { maritalStatus: "MARRIED", spouseMemberId: m.id }, { note: `Linked as spouse in household ${h.name}` });
-  }
+
 }
 
 export async function setHouseholdRelation(db: Db, ctx: AuthContext, householdId: string, memberId: string, relation: HouseholdRelation) {
@@ -226,18 +198,4 @@ export async function removeFromHousehold(db: Db, ctx: AuthContext, householdId:
     await new AuditWriter(tx, actorFrom(ctx), "UI").log({ action: "DELETE", entity: "Household", entityId: h.id, memberId, field: "household", oldValue: `${h.name} · ${relationLabel(h.kind, row.relation)}` });
     if (h.members.length === 1) await tx.household.delete({ where: { id: h.id } });
   });
-}
-
-/** Married couples (spouse links) not yet sharing a household — quick suggestions. */
-export async function spouseHouseholdSuggestions(db: DbOrTx, ctx: AuthContext, take = 10) {
-  assertRead(ctx);
-  const pairs = await db.member.findMany({
-    where: { AND: [memberScopeWhere(ctx) as Prisma.MemberWhereInput, LIVE, { spouseMemberId: { not: null }, households: { none: { household: { kind: "FAMILY" } } } }] },
-    select: { id: true, memberId: true, lastName: true, firstName: true, gender: true, spouse: { select: { id: true, memberId: true, lastName: true, firstName: true, gender: true } } },
-    take: take * 2,
-  });
-  const seen = new Set<string>();
-  return pairs
-    .filter((p) => p.spouse && !seen.has([p.id, p.spouse.id].sort().join()) && seen.add([p.id, p.spouse.id].sort().join()))
-    .slice(0, take);
 }
