@@ -12,7 +12,7 @@ import { can } from "@/server/authz/policy";
 import { db } from "@/server/db";
 import { getMemberProfile, type MemberProfile, type ProfileTab } from "@/server/members/profile";
 import { retentionDays } from "@/server/workflows/status";
-import { RELATION_LABELS, householdsOfMember } from "@/server/households/service";
+import { KINDS, householdsOfMember, relationLabel } from "@/server/households/service";
 
 export const metadata: Metadata = { title: "Member" };
 
@@ -367,19 +367,20 @@ function FamilyTab({ m, caps }: { m: M; caps: MemberProfile["caps"] }) {
 
 function HouseholdSection({ households, memberId, canEdit }: { households: Awaited<ReturnType<typeof householdsOfMember>>; memberId: string; canEdit: boolean }) {
   return (
-    <Section title="Family / cell" action={canEdit && households.length === 0 ? <Link href="/families" className="text-[14px] font-semibold text-primary">Add to a family or cell</Link> : undefined}>
+    <Section title="Family / cell" action={canEdit && households.length < 2 ? <Link href={households.some((h) => h.household.kind === "FAMILY") ? "/cells" : "/families"} className="text-[14px] font-semibold text-primary">{households.some((h) => h.household.kind === "FAMILY") ? "Add to a cell" : "Add to a family"}</Link> : undefined}>
       {households.length === 0 ? (
         <p className="p-5 text-ink-2">Not in a family or cell yet.</p>
       ) : (
         households.map((hm) => (
           <div key={hm.householdId} className="p-5">
-            <Link href={`/families/${hm.householdId}`} className="font-semibold text-primary hover:underline">{hm.household.name}</Link>
-            <span className="text-ink-2"> · {RELATION_LABELS[hm.relation]}</span>
+            <span className="mr-2 rounded-full bg-surface-2 px-2 py-0.5 text-[11px] font-semibold uppercase tracking-wider text-ink-2">{KINDS[hm.household.kind].title}</span>
+            <Link href={`${KINDS[hm.household.kind].path}/${hm.householdId}`} className="font-semibold text-primary hover:underline">{hm.household.name}</Link>
+            <span className="text-ink-2"> · {relationLabel(hm.household.kind, hm.relation)}</span>
             <ul className="mt-2 space-y-1 text-[15px]">
               {hm.household.members.filter((x) => x.memberId !== memberId).map((x) => (
                 <li key={x.memberId}>
                   <Link className="hover:underline" href={`/members/${x.member.id}?tab=family`}>{x.member.firstName} {x.member.lastName}</Link>
-                  <span className="text-ink-2"> · {RELATION_LABELS[x.relation]}</span>
+                  <span className="text-ink-2"> · {relationLabel(hm.household.kind, x.relation)}</span>
                 </li>
               ))}
             </ul>

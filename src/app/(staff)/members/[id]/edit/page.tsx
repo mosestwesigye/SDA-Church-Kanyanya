@@ -81,7 +81,7 @@ export default async function EditMemberPage({ params, searchParams }: { params:
             household: canHousehold,
           }}
           households={households}
-          currentHouseholds={current.map((c) => ({ id: c.householdId, name: c.household.name, relation: c.relation }))}
+          currentHouseholds={current.map((c) => ({ id: c.householdId, kind: c.household.kind, name: c.household.name, relation: c.relation }))}
         />
       </main>
     </>

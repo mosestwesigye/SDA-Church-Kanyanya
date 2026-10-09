@@ -13,7 +13,7 @@ import { addMinistry, createMember, memberPatchSchema, updateMember } from "@/se
 import { joinHousehold, joinInput } from "@/server/households/service";
 import type { RequestContext } from "@/server/auth/session";
 
-type HouseholdChoice = { householdId?: string; newName?: string; relation: string } | null | undefined;
+type HouseholdChoice = { householdId?: string; newName?: string; kind?: "FAMILY" | "CELL"; relation: string } | null | undefined;
 
 /** Optional family/cell placement after the member is saved; failures don't undo the member. */
 async function placeInHousehold(ctx: RequestContext, memberId: string, choice: HouseholdChoice): Promise<string | null> {

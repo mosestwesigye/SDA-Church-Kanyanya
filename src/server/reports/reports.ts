@@ -8,7 +8,7 @@ import { assertCan, can, memberScopeWhere, type AuthContext } from "../authz/pol
 import { dashboardStats, STATUS_BAR_ORDER } from "../dashboard/stats";
 import type { DbOrTx } from "../db";
 import { ForbiddenError } from "../errors";
-import { RELATION_LABELS } from "../households/service";
+import { KINDS, relationLabel } from "../households/service";
 import { MEETING_TYPES } from "../minutes/service";
 import { directoryQuerySchema, listMembers, type DirectoryRow } from "../members/directory";
 import { ministryRoster } from "../ministries/service";
@@ -488,7 +488,7 @@ async function families(db: DbOrTx, ctx: AuthContext, omitted: Set<string>) {
   const scope = liveWhere(ctx);
   const households = await db.household.findMany({
     where: { members: { some: { member: scope } } },
-    orderBy: { name: "asc" },
+    orderBy: [{ kind: "asc" }, { name: "asc" }],
     include: {
       members: {
         where: { member: scope },
@@ -498,27 +498,28 @@ async function families(db: DbOrTx, ctx: AuthContext, omitted: Set<string>) {
   });
   const order: Record<string, number> = { HEAD: 0, SPOUSE: 1, CHILD: 2, DEPENDANT: 3, OTHER: 4 };
   const cols = columnsFor(ctx, ["memberId", "name", "phone", "zone"], omitted);
-  const relation: Col = { key: "relation", label: "Role in family / cell", width: 18, group: "member", get: (m) => m.relation };
+  const relation: Col = { key: "relation", label: "Role", width: 20, group: "member", get: (m) => m.relation };
   const placed = households.reduce((n, h) => n + h.members.length, 0);
   return {
     title: REPORTS.families.title,
-    subtitle: `${households.length} families and cells · ${placed} members`,
+    subtitle: `${households.filter((h) => h.kind === "FAMILY").length} families · ${households.filter((h) => h.kind === "CELL").length} cells · ${placed} members`,
     rowCount: placed,
     sections: [
       {
         heading: "Summary",
         summary: [
-          { label: "Families and cells", value: households.length },
+          { label: "Families", value: households.filter((h) => h.kind === "FAMILY").length },
+          { label: "Cells", value: households.filter((h) => h.kind === "CELL").length },
           { label: "Members placed", value: placed },
           { label: "Without a head or leader", value: households.filter((h) => !h.members.some((m) => m.relation === "HEAD")).length },
         ],
       },
       ...households.map((h) => ({
-        heading: `${h.name} — ${h.members.length}`,
+        heading: `${KINDS[h.kind].title}: ${h.name} — ${h.members.length}`,
         table: toTable(
           h.name,
           [cols[0]!, cols[1]!, relation, ...cols.slice(2)],
-          h.members.sort((a, b) => order[a.relation]! - order[b.relation]! || a.member.lastName.localeCompare(b.member.lastName)).map((m) => ({ ...m.member, relation: RELATION_LABELS[m.relation] })),
+          h.members.sort((a, b) => order[a.relation]! - order[b.relation]! || a.member.lastName.localeCompare(b.member.lastName)).map((m) => ({ ...m.member, relation: relationLabel(h.kind, m.relation) })),
         ),
       })),
     ],

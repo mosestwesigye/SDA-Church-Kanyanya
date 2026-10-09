@@ -475,12 +475,21 @@ model ValueMapping {
   @@unique([field, normalized])
 }
 
+enum HouseholdKind {
+  FAMILY
+  CELL
+}
+
+/// A family (husband, wife, children…) or a cell group (leader and members).
 model Household {
   id        String            @id @default(cuid())
+  kind      HouseholdKind     @default(FAMILY)
   name      String
   createdAt DateTime          @default(now())
   updatedAt DateTime          @updatedAt
   members   HouseholdMember[]
+
+  @@index([kind, name])
 }
 
 model HouseholdMember {

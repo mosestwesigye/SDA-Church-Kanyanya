@@ -22,6 +22,14 @@ const PATHS: Record<string, React.ReactNode> = {
       <path d="M10 20v-5.5h4V20" />
     </>
   ),
+  cells: (
+    <>
+      <circle cx="12" cy="6.5" r="2.5" />
+      <circle cx="5.5" cy="16" r="2.5" />
+      <circle cx="18.5" cy="16" r="2.5" />
+      <path d="M10.5 8.6 7 13.8M13.5 8.6l3.5 5.2M8 16h8" />
+    </>
+  ),
   cleanup: (
     <>
       <path d="m14.5 4.5 5 5L9 20H4v-5L14.5 4.5Z" />

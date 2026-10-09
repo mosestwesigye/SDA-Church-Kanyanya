@@ -9,6 +9,7 @@ import { queueMemberUpdate } from "@/lib/outbox";
 import { checkDuplicatesAction, createMemberAction, searchMembersAction, updateMemberAction } from "@/app/(staff)/members/form-actions";
 import type { Option } from "./types";
 import { toast } from "@/lib/toast";
+import { RELATIONS_BY_KIND, relationLabel } from "@/lib/households";
 
 export type FormValues = {
   lastName: string;
@@ -41,14 +42,13 @@ export const EMPTY_VALUES: FormValues = {
   householdChoice: "", householdNewName: "", householdRelation: "OTHER",
 };
 
-export type HouseholdOption = { id: string; label: string; size: number; hasHead: boolean };
-const HOUSEHOLD_RELATIONS = [
-  { id: "OTHER", label: "Cell member" },
-  { id: "HEAD", label: "Head / cell leader" },
-  { id: "SPOUSE", label: "Spouse" },
-  { id: "CHILD", label: "Child" },
-  { id: "DEPENDANT", label: "Dependant" },
-];
+export type HouseholdOption = { id: string; kind: HhKind; label: string; size: number; hasHead: boolean };
+const NEW_FAMILY = "__new_FAMILY__";
+const NEW_CELL = "__new_CELL__";
+type HhKind = "FAMILY" | "CELL";
+const kindOfChoice = (choice: string, households: HouseholdOption[]): HhKind =>
+  choice === NEW_CELL ? "CELL" : choice === NEW_FAMILY ? "FAMILY" : (households.find((h) => h.id === choice)?.kind ?? "FAMILY");
+const roleLabel = (kind: HhKind, r: string) => relationLabel(kind, r as never) ?? r;
 
 type Caps = { profile: boolean; contact: boolean; sensitive: boolean; statusEditable: boolean; manageMinistry: boolean; household?: boolean };
 type Dup = { id: string; memberId: string; lastName: string; firstName: string; zone: string | null; reasons: string[]; samePhone: boolean; similarity: number };
@@ -112,7 +112,7 @@ export function MemberForm({
   caps: Caps;
   startStep?: number;
   households?: HouseholdOption[];
-  currentHouseholds?: { id: string; name: string; relation: string }[];
+  currentHouseholds?: { id: string; kind: HhKind; name: string; relation: string }[];
 }) {
   const router = useRouter();
   const [v, setV] = useState<FormValues>(initial);
@@ -181,9 +181,9 @@ export function MemberForm({
     }
     const household =
       caps.household && v.householdChoice
-        ? v.householdChoice === "__new__"
-          ? { newName: v.householdNewName.trim(), relation: v.householdRelation }
-          : { householdId: v.householdChoice, relation: v.householdRelation }
+        ? v.householdChoice === NEW_FAMILY || v.householdChoice === NEW_CELL
+          ? { newName: v.householdNewName.trim(), kind: kindOfChoice(v.householdChoice, households), relation: v.householdRelation }
+          : { householdId: v.householdChoice, kind: kindOfChoice(v.householdChoice, households), relation: v.householdRelation }
         : null;
     if (household && "newName" in household && (household.newName ?? "").length < 2) {
       setError("Enter a name for the new family or cell, or choose “Not in a family or cell”.");
@@ -462,38 +462,55 @@ export function MemberForm({
 
 /* ───── field components ───── */
 
-function HouseholdPicker({ v, set, households, current }: { v: FormValues; set: <K extends keyof FormValues>(k: K, val: FormValues[K]) => void; households: HouseholdOption[]; current: { id: string; name: string; relation: string }[] }) {
+function HouseholdPicker({ v, set, households, current }: { v: FormValues; set: <K extends keyof FormValues>(k: K, val: FormValues[K]) => void; households: HouseholdOption[]; current: { id: string; kind: HhKind; name: string; relation: string }[] }) {
   const inIds = new Set(current.map((c) => c.id));
-  const choices = households.filter((h) => !inIds.has(h.id));
+  // One family and one cell per member: hide the kind they already belong to.
+  const inKinds = new Set(current.map((c) => c.kind));
+  const choices = households.filter((h) => !inIds.has(h.id) && !inKinds.has(h.kind));
   const chosen = households.find((h) => h.id === v.householdChoice);
-  const relations = HOUSEHOLD_RELATIONS.filter((r) => r.id !== "HEAD" || !chosen?.hasHead);
+  const kind = kindOfChoice(v.householdChoice, households);
+  const relations = RELATIONS_BY_KIND[kind].filter((r) => r !== "HEAD" || !chosen?.hasHead).map((r) => ({ id: r, label: roleLabel(kind, r) }));
+  const choose = (value: string) => {
+    set("householdChoice", value);
+    const k = kindOfChoice(value, households);
+    const allowed = RELATIONS_BY_KIND[k].filter((r) => r !== "HEAD" || !households.find((h) => h.id === value)?.hasHead);
+    if (!allowed.includes(v.householdRelation as never)) set("householdRelation", k === "CELL" ? "OTHER" : (allowed.includes("CHILD") ? "CHILD" : allowed[0]!));
+  };
+  const group = (k: HhKind, title: string) => {
+    const list = choices.filter((h) => h.kind === k);
+    if (inKinds.has(k)) return null;
+    return (
+      <optgroup label={title}>
+        {list.map((h) => <option key={h.id} value={h.id}>{h.label} · {h.size} member{h.size === 1 ? "" : "s"}</option>)}
+        <option value={k === "FAMILY" ? NEW_FAMILY : NEW_CELL}>+ Start a new {k === "FAMILY" ? "family" : "cell"}…</option>
+      </optgroup>
+    );
+  };
   return (
-    <Group title="Family / cell" hint="Optional. Put them in an existing family or cell, or start a new one.">
+    <Group title="Family / cell" hint="Optional. A member can be in one family and one cell.">
       {current.length > 0 && (
         <p className="text-[14px]">
-          Already in: {current.map((c) => `${c.name} (${HOUSEHOLD_RELATIONS.find((r) => r.id === c.relation)?.label ?? c.relation})`).join(", ")}
+          Already in: {current.map((c) => `${c.name} (${roleLabel(c.kind, c.relation)})`).join(", ")}
         </p>
       )}
-      <div>
-        <label htmlFor="f-household" className="field-label">{current.length ? "Also add to" : "Family or cell"}</label>
-        <select
-          id="f-household"
-          className="input"
-          value={v.householdChoice}
-          onChange={(e) => {
-            set("householdChoice", e.target.value);
-            if (e.target.value && households.find((h) => h.id === e.target.value)?.hasHead && v.householdRelation === "HEAD") set("householdRelation", "OTHER");
-          }}
-        >
-          <option value="">{current.length ? "No other family or cell" : "Not in a family or cell"}</option>
-          {choices.map((h) => (
-            <option key={h.id} value={h.id}>{h.label} · {h.size} member{h.size === 1 ? "" : "s"}</option>
-          ))}
-          <option value="__new__">+ Start a new family or cell…</option>
-        </select>
-      </div>
-      {v.householdChoice === "__new__" && (
-        <Text label="New family or cell name" value={v.householdNewName} onChange={(x) => set("householdNewName", x)} placeholder="e.g. Kanyanya Cell 3" maxLength={80} />
+      {inKinds.size < 2 && (
+        <div>
+          <label htmlFor="f-household" className="field-label">{current.length ? "Also add to" : "Family or cell"}</label>
+          <select id="f-household" className="input" value={v.householdChoice} onChange={(e) => choose(e.target.value)}>
+            <option value="">{current.length ? "Nothing else" : "Not in a family or cell"}</option>
+            {group("FAMILY", "Families")}
+            {group("CELL", "Cells")}
+          </select>
+        </div>
+      )}
+      {(v.householdChoice === NEW_FAMILY || v.householdChoice === NEW_CELL) && (
+        <Text
+          label={v.householdChoice === NEW_FAMILY ? "New family name" : "New cell name"}
+          value={v.householdNewName}
+          onChange={(x) => set("householdNewName", x)}
+          placeholder={v.householdChoice === NEW_FAMILY ? "e.g. Mr and Mrs Twesigye Moses" : "e.g. Kanyanya Cell 3"}
+          maxLength={80}
+        />
       )}
       {v.householdChoice && (
         <Select label="Their role in it" value={v.householdRelation} onChange={(x) => set("householdRelation", x || "OTHER")} options={relations} />
@@ -697,7 +714,7 @@ function Review({ v, options, ministries, caps, households }: { v: FormValues; o
         ] as [string, string][])
       : []),
     ...(v.householdChoice
-      ? ([["Family / cell", `${v.householdChoice === "__new__" ? `${v.householdNewName || "New"} (new)` : (households.find((h) => h.id === v.householdChoice)?.label ?? "—")} · ${HOUSEHOLD_RELATIONS.find((r) => r.id === v.householdRelation)?.label ?? ""}`]] as [string, string][])
+      ? ([["Family / cell", `${v.householdChoice === NEW_FAMILY || v.householdChoice === NEW_CELL ? `${v.householdNewName || "New"} (new ${kindOfChoice(v.householdChoice, households) === "CELL" ? "cell" : "family"})` : (households.find((h) => h.id === v.householdChoice)?.label ?? "—")} · ${roleLabel(kindOfChoice(v.householdChoice, households), v.householdRelation)}`]] as [string, string][])
       : []),
     ...ministries.filter((m) => m.ministryId).map((m) => ["Ministry", `${label(options.ministries, m.ministryId)} · ${label(options.roles, m.roleId)}`] as [string, string]),
   ];
