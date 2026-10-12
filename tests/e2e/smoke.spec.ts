@@ -32,7 +32,7 @@ test("signed-out visitors are sent to the right sign-in page @mobile", async ({ 
 
 test("pastor: dashboard, directory search, profile and permission limits", async ({ page }) => {
   await signIn(page, "pastor@example.org");
-  await expect(page.getByText("Membership by status")).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Active register" })).toBeVisible();
   await page.getByRole("link", { name: /^Members/ }).first().click();
   await expect(page.getByRole("heading", { level: 1 })).toContainText("Members");
   await page.getByPlaceholder(/Search members/).first().fill("M0002");
@@ -49,7 +49,7 @@ test("pastor: dashboard, directory search, profile and permission limits", async
 test("reports: preview and a logged PDF download after the privacy notice", async ({ page }) => {
   await signIn(page, "pastor@example.org");
   await page.goto("/reports/status");
-  await expect(page.getByRole("heading", { name: "Membership by status" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Active & irregular members" })).toBeVisible();
   await page.getByRole("button", { name: "Download" }).click();
   await expect(page.getByRole("dialog").getByText(/Data Protection and Privacy Act, 2019/)).toBeVisible();
   const [download] = await Promise.all([page.waitForEvent("download"), page.getByRole("button", { name: /I understand/ }).click()]);
