@@ -18,17 +18,16 @@ export default async function StaffLayout({ children }: { children: React.ReactN
   // Members signed in by phone only have the self-service area.
   if (ctx.roles.length > 0 && ctx.roles.every((r) => r === "MEMBER")) redirect("/me");
   const canMembers = can(ctx, "member", "read");
-  const [members, cleanup, approvals, ministries, corrections, dormant] = await Promise.all([
+  const [members, cleanup, ministries, corrections, dormant] = await Promise.all([
     canMembers ? db.member.count({ where: { AND: [memberScopeWhere(ctx), { deletedAt: null, mergedIntoId: null }] } }) : 0,
     can(ctx, "cleanup", "use") ? db.member.count({ where: { deletedAt: null, mergedIntoId: null, completeness: { lt: 100 } } }) : 0,
-    can(ctx, "transfer", "read") ? db.statusChangeRequest.count({ where: { state: "PENDING" } }) : 0,
     db.listItem.count({ where: { type: "MINISTRY", active: true } }),
     can(ctx, "correction_request", "review") ? db.correctionRequest.count({ where: { state: "PENDING" } }) : 0,
     can(ctx, "member.profile", "read")
       ? db.member.count({ where: { AND: [memberScopeWhere(ctx), { deletedAt: null, mergedIntoId: null, purgedAt: null }, { OR: [{ status: null }, { status: { in: ["SELF_TRANSFERRED", "UNDER_DISCIPLINE", "LEFT_THE_FAITH"] } }] }] } })
       : 0,
   ]);
-  const counts = { members, cleanup, approvals, ministries, corrections, dormant };
+  const counts = { members, cleanup, ministries, corrections, dormant };
 
   const visible = NAV.map((s) => ({
     section: s.section,

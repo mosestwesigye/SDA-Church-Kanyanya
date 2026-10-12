@@ -345,8 +345,7 @@ export function MemberForm({
                 </Group>
               ) : (
                 <p className="text-[14px] text-ink-2">
-                  Membership status: <strong>{STATUS_META[v.status as keyof typeof STATUS_META]?.label ?? "Not recorded"}</strong>. Status changes go through approval —
-                  use <Link className="text-primary underline" href={`/transfers/new?member=${memberId}`}>Change status</Link>.
+                  Membership status: <strong>{STATUS_META[v.status as keyof typeof STATUS_META]?.label ?? "Not recorded"}</strong>. Ask the Clerk or Pastor to change it.
                 </p>
               ))}
             {caps.sensitive ? (

@@ -55,9 +55,9 @@ describe("default permission matrix", () => {
     expect(projectMember(ctx, { ...ROW, id: "m2" }).restricted).toEqual(["member.profile", "member.contact", "member.sensitive"]);
   });
 
-  it("only Pastor and Admin approve status changes by default", () => {
-    const approvers = ROLE_KEYS.filter((r) => can(ctxFor([r]), "status_request", "approve"));
-    expect(approvers.sort()).toEqual(["PASTOR", "SYSTEM_ADMIN"]);
+  it("Clerks, Pastor and Admin change membership status by default", () => {
+    const changers = ROLE_KEYS.filter((r) => can(ctxFor([r]), "status_request", "create"));
+    expect(changers.sort()).toEqual(["ASSISTANT_CLERK", "CHURCH_CLERK", "PASTOR", "SYSTEM_ADMIN"]);
   });
 
   it("only Admin can purge or manage the permission matrix", () => {

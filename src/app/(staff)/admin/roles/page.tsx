@@ -11,6 +11,8 @@ const ACTION_LABELS: Record<string, string> = {
   read: "View", create: "Add", update: "Edit", delete: "Delete", restore: "Restore", purge: "Purge", merge: "Merge",
   manage: "Manage", use: "Use", run: "Run", approve: "Approve", upload: "Upload", review: "Review",
 };
+// Where the generic verb reads wrong for a resource.
+const actionLabel = (resource: string, a: string) => (resource === "status_request" && a === "create" ? "Change" : ACTION_LABELS[a] ?? a);
 
 export default async function RolesPage() {
   const ctx = await requirePermission("admin.roles", "manage");
@@ -41,7 +43,7 @@ export default async function RolesPage() {
                 <tr key={`${res.resource}:${a}`} className={`${i === 0 ? "border-t-2" : "border-t"} border-line`}>
                   <th scope="row" className="min-w-[250px] px-3 py-1.5 text-left font-normal">
                     {i === 0 && <span className="block font-semibold">{res.label}</span>}
-                    <span className="text-ink-2">{ACTION_LABELS[a] ?? a}</span>
+                    <span className="text-ink-2">{actionLabel(res.resource, a)}</span>
                   </th>
                   {m.roles.map((r) => (
                     <td key={r.id} className="px-2 py-1.5">
@@ -50,7 +52,7 @@ export default async function RolesPage() {
                         resource={res.resource}
                         action={a}
                         scope={r.grants[`${res.resource}:${a}`] ?? null}
-                        label={`${ROLE_LABELS[r.key] ?? r.name}: ${res.label} — ${ACTION_LABELS[a] ?? a}`}
+                        label={`${ROLE_LABELS[r.key] ?? r.name}: ${res.label} — ${actionLabel(res.resource, a)}`}
                         locked={m.locked.includes(`${r.key}|${res.resource}:${a}`)}
                       />
                     </td>

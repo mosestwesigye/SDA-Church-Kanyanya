@@ -77,10 +77,12 @@ describe("audited member writes", () => {
     expect(await db.auditLog.count({ where: { memberId: m.id, entity: "MemberMinistry" } })).toBe(1);
   });
 
-  it("routes status changes through approval once a status is set", async () => {
+  it("changes status directly (no approval) and audits each change", async () => {
     const m = await createMember(db, clerk, { lastName: "Kato", firstName: "Emmanuel" });
-    await updateMember(db, clerk, m.id, { status: "ACTIVE" }); // first status: allowed
-    await expect(updateMember(db, clerk, m.id, { status: "DECEASED" })).rejects.toThrow(/approval/);
+    await updateMember(db, clerk, m.id, { status: "ACTIVE" });
+    await updateMember(db, clerk, m.id, { status: "IRREGULAR" });
+    const rows = await db.auditLog.findMany({ where: { memberId: m.id, field: "status" }, orderBy: { id: "asc" } });
+    expect(rows.map((r) => r.newValue)).toEqual(["ACTIVE", "IRREGULAR"]);
   });
 
   it("logs soft delete and restore, and blocks edits while deleted", async () => {

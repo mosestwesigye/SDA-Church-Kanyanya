@@ -1,6 +1,7 @@
 import { z } from "zod";
 import type { AuditSource, Prisma } from "@/generated/prisma/client";
 import { computeCompleteness, type CompletenessRules } from "@/lib/completeness";
+import { STATUS_META } from "@/lib/labels";
 import { normalizeUgPhone } from "@/lib/phone";
 import { AuditWriter, type Actor } from "../audit/audit";
 import { assertCan, assertCanUpdateFields, can, canOnMember, memberScopeWhere, type AuthContext } from "../authz/policy";
@@ -124,16 +125,6 @@ export async function refreshCompleteness(tx: DbOrTx, memberId: string, rules?: 
   return res;
 }
 
-/** Status changes on a member who already has a status go through the approval workflow. */
-function guardStatus(current: string | null, next: unknown) {
-  if (next === undefined || next === current) return;
-  if (current !== null) {
-    throw new ValidationError("Status changes need approval. Use “Change status”.", {
-      status: "Use Change status",
-    });
-  }
-}
-
 export type UpdateOptions = {
   /** Optimistic concurrency: reject if the record moved on. */
   expectedVersion?: number;
@@ -166,7 +157,10 @@ export async function updateMemberInTx(tx: Tx, ctx: AuthContext, id: string, inp
     const columns = fields.flatMap((f) => COLUMNS[f]);
     assertCanUpdateFields(ctx, columns, before);
     if (opts.expectedVersion !== undefined && opts.expectedVersion !== before.version) throw new ConflictError();
-    guardStatus(before.status, patch.status);
+    // Setting a first status is part of completing the record; changing one needs the status-change permission.
+    if (patch.status !== undefined && patch.status !== before.status && before.status !== null && !can(ctx, "status_request", "create")) {
+      throw new ForbiddenError("You can’t change membership status.");
+    }
     if (patch.spouseMemberId && patch.spouseMemberId === id) {
       throw new ValidationError("A member cannot be their own spouse.", { spouseMemberId: "Choose another member" });
     }
@@ -185,6 +179,22 @@ export async function updateMemberInTx(tx: Tx, ctx: AuthContext, id: string, inp
       data: { ...(data as Prisma.MemberUpdateManyMutationInput), version: { increment: 1 } },
     });
     if (res.count !== 1) throw new ConflictError();
+    // A status change is recorded in the member's history (and counted in the movement reports).
+    if (patch.status !== undefined && patch.status !== before.status) {
+      const label = (s: string | null) => (s ? STATUS_META[s as keyof typeof STATUS_META].label : "Not recorded");
+      await tx.membershipEvent.create({
+        data: {
+          memberId: id,
+          type: "STATUS_CHANGE",
+          occurredOn: new Date(`${new Date().toLocaleDateString("en-CA", { timeZone: "Africa/Kampala" })}T00:00:00Z`),
+          title: `Status: ${label(before.status)} → ${label(patch.status)}`,
+          detail: opts.note ?? null,
+          fromStatus: before.status,
+          toStatus: patch.status,
+          createdById: ctx.userId,
+        },
+      });
+    }
     await refreshCompleteness(tx, id);
     return { changes };
   }

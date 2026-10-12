@@ -8,15 +8,16 @@ import { requirePermission } from "@/server/auth/session";
 import { can } from "@/server/authz/policy";
 import { db } from "@/server/db";
 import { DORMANT_TABS, dormantCounts, listDormant } from "@/server/members/dormant";
+import { canChangeStatus } from "@/server/workflows/status";
 
 export const metadata: Metadata = { title: "Dormant members" };
 
 const TAB_NOTES: Record<string, string> = {
   all: "Everyone not Active or Irregular, except the deceased.",
-  none: "No status recorded yet. Set it directly — select several to update them together.",
-  self: "Members recorded as self transferred. Reactivating them needs the Pastor’s approval.",
-  discipline: "Members under church discipline. Restoring them needs the Pastor’s approval.",
-  left: "Members recorded as having left the faith. Reactivating them needs the Pastor’s approval.",
+  none: "No status recorded yet. Select several to update them together.",
+  self: "Members recorded as self transferred. Mark them Active or Irregular when they return.",
+  discipline: "Members under church discipline. Marking one Active records a restoration.",
+  left: "Members recorded as having left the faith. Mark them Active or Irregular when they return.",
   deceased: "Kept for the record only; they are never counted.",
 };
 
@@ -31,7 +32,7 @@ export default async function DormantPage({ searchParams }: { searchParams: Prom
     db.listItem.findMany({ where: { type: "ZONE", active: true }, orderBy: [{ sortOrder: "asc" }, { label: "asc" }], select: { id: true, label: true } }),
   ]);
   const canActivate = can(ctx, "member.profile", "update") && can(ctx, "member", "update");
-  const canRequest = can(ctx, "status_request", "create");
+  const canChange = canChangeStatus(ctx);
   const href = (o: Record<string, string | number | undefined>) => {
     const p = new URLSearchParams();
     const merged = { tab: list.tab === "all" ? undefined : list.tab, q: sp.q, zone: sp.zone, ...o };
@@ -105,7 +106,7 @@ export default async function DormantPage({ searchParams }: { searchParams: Prom
           </EmptyState>
         ) : (
           <>
-            <DormantTable rows={rows} canActivate={canActivate} canRequest={canRequest} />
+            <DormantTable rows={rows} canActivate={canActivate} canChange={canChange} />
             <div className="mt-4 flex flex-wrap items-center justify-between gap-3 text-[14px] text-ink-2">
               <span>
                 Showing {(list.page - 1) * 25 + 1}–{(list.page - 1) * 25 + rows.length} of {list.total.toLocaleString("en-UG")}

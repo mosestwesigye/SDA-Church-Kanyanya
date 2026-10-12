@@ -40,7 +40,8 @@ export const CATALOG = {
   household: ["read", "update"],
   cleanup: ["use"],
   import: ["run"],
-  status_request: ["create", "approve"],
+  // Change a member's status (transfers, deaths, discipline, restorations…). Applies at once.
+  status_request: ["create"],
   transfer: ["read", "update"],
   correction_request: ["create", "review"],
   document: ["read", "upload"],

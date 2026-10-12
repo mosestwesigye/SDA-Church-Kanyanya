@@ -229,7 +229,7 @@ async function quarterly(db: DbOrTx, ctx: AuthContext, p: ReportParams["quarterl
     sections: [
       {
         heading: "Membership",
-        note: "Membership counts Active and Irregular members only. Gains and losses come from approved status changes; records added, or given a status for the first time, in the quarter are counted separately.",
+        note: "Membership counts Active and Irregular members only. Gains and losses come from recorded status changes; records added, or given a status for the first time, in the quarter are counted separately.",
         summary: [
           { label: "Membership at start of quarter", value: opening },
           { label: "Gains", value: gains.length },

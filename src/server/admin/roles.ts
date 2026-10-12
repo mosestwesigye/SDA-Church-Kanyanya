@@ -20,7 +20,7 @@ export const RESOURCE_LABELS: Record<Resource, string> = {
   household: "Families",
   cleanup: "Data clean-up",
   import: "Import",
-  status_request: "Status changes",
+  status_request: "Membership status",
   transfer: "Transfers",
   correction_request: "Self-service corrections",
   document: "Documents",

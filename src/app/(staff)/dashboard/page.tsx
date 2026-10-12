@@ -4,11 +4,11 @@ import { BarList, Donut, StackedBar, type Datum } from "@/components/dashboard/c
 import { NavIcon } from "@/components/shell/nav-icons";
 import { PageHeader, TopBar } from "@/components/shell/topbar";
 import { formatDate, NOT_RECORDED, STATUS_META, type StatusKey } from "@/lib/labels";
-import { can } from "@/server/authz/policy";
+import type { Prisma } from "@/generated/prisma/client";
+import { can, memberScopeWhere } from "@/server/authz/policy";
 import { requireContext } from "@/server/auth/session";
 import { db } from "@/server/db";
 import { dashboardStats, recentActivity, upcomingBirthdays } from "@/server/dashboard/stats";
-import { REQUEST_TYPES } from "@/server/workflows/status";
 
 export const metadata: Metadata = { title: "Dashboard" };
 
@@ -67,14 +67,17 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
     );
   }
 
-  const [s, birthdays, activity, pending, corrections] = await Promise.all([
+  const [s, birthdays, activity, changes, corrections] = await Promise.all([
     dashboardStats(db, ctx, { zoneId: zone }),
     upcomingBirthdays(db, ctx, 7, 5),
     recentActivity(db, ctx, 5),
-    can(ctx, "transfer", "read") ? db.statusChangeRequest.groupBy({ by: ["type"], where: { state: "PENDING" }, _count: true }) : null,
+    can(ctx, "transfer", "read") && can(ctx, "member.profile", "read")
+      ? db.membershipEvent.count({
+          where: { toStatus: { not: null }, createdAt: { gte: new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1)) }, member: { AND: [memberScopeWhere(ctx) as Prisma.MemberWhereInput, { purgedAt: null }] } },
+        })
+      : null,
     can(ctx, "correction_request", "review") ? db.correctionRequest.count({ where: { state: "PENDING" } }) : null,
   ]);
-  const pendingTotal = pending?.reduce((n, p) => n + p._count, 0) ?? 0;
   const active = s.status.find((x) => x.key === "ACTIVE")?.n ?? 0;
   const irregular = s.status.find((x) => x.key === "IRREGULAR")?.n ?? 0;
   const pct = s.complete !== null && s.total ? Math.round((s.complete / s.total) * 100) : 0;
@@ -146,13 +149,12 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
               href="/dormant"
             />
           )}
-          {pending && (
+          {changes !== null && (
             <Stat
               icon="transfers"
-              label="Pending approvals"
-              value={fmt(pendingTotal)}
-              tone={pendingTotal ? "attention" : "clear"}
-              note={pendingTotal ? pending.map((p) => `${p._count} ${REQUEST_TYPES[p.type].label.toLowerCase()}`).join(" · ") : "All caught up"}
+              label="Status changes"
+              value={fmt(changes)}
+              note={`Recorded in ${now.toLocaleDateString("en-GB", { month: "long", timeZone: "Africa/Kampala" })}`}
               href="/transfers"
             />
           )}
@@ -245,7 +247,7 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
 }
 
 function activityVerb(action: string, entity: string, field: string | null) {
-  if (entity === "StatusChangeRequest") return action === "APPROVE" ? "approved a status change for" : action === "REJECT" ? "rejected a status change for" : "requested a status change for";
+  if (entity === "StatusChangeRequest") return action === "APPROVE" ? "approved a status change for" : action === "REJECT" ? "rejected a status change for" : "changed the status of";
   if (action === "CREATE") return "added";
   if (action === "MERGE") return "merged a duplicate into";
   if (action === "DELETE") return "deleted";

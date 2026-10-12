@@ -6,7 +6,7 @@ import { requireContext } from "@/server/auth/session";
 import { db } from "@/server/db";
 import { ValidationError } from "@/server/errors";
 import { uploadDocument } from "@/server/members/documents";
-import { advanceTransfer, cancelStatusRequest, createStatusRequest, decideStatusRequest, purgeMember } from "@/server/workflows/status";
+import { advanceTransfer, cancelStatusRequest, applyPendingStatusRequest, createStatusRequest, purgeMember } from "@/server/workflows/status";
 
 function refresh(memberId?: string) {
   revalidatePath("/transfers");
@@ -35,16 +35,16 @@ export async function createRequestAction(form: FormData) {
       documentId,
     });
     refresh(memberId);
-    return { message: "Request sent for approval.", data: { id: req.id } };
+    return { message: "Status updated — the member’s history records the change.", data: { id: req.id } };
   });
 }
 
-export async function decideAction(requestId: string, approve: boolean, note: string) {
+export async function applyPendingAction(requestId: string) {
   return attempt(async () => {
     const ctx = await requireContext();
-    const r = await decideStatusRequest(db, ctx, requestId, approve, note);
+    await applyPendingStatusRequest(db, ctx, requestId);
     refresh();
-    return { message: r.state === "APPROVED" ? "Approved — the member’s status and history are updated." : "Rejected." };
+    return { message: "Status updated — the member’s history records the change." };
   });
 }
 
@@ -53,7 +53,7 @@ export async function cancelRequestAction(requestId: string) {
     const ctx = await requireContext();
     await cancelStatusRequest(db, ctx, requestId);
     refresh();
-    return { message: "Request cancelled." };
+    return { message: "Request discarded. The status was not changed." };
   });
 }
 

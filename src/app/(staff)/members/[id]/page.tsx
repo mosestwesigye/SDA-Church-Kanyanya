@@ -456,7 +456,7 @@ function Timeline({ data, m, limit }: { data: MemberProfile; m: M; limit?: numbe
 
 function HistoryTab({ data, m }: { data: MemberProfile; m: M }) {
   return (
-    <Section title="Membership history" note="Status changes are added here when they are approved">
+    <Section title="Membership history" note="Every status change is added here with its date and reason">
       <div className="p-5"><Timeline data={data} m={m} /></div>
     </Section>
   );

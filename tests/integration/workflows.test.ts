@@ -3,7 +3,7 @@ import type { Db } from "@/server/db";
 import { ConflictError, ForbiddenError, ValidationError } from "@/server/errors";
 import { uploadDocument } from "@/server/members/documents";
 import { addMinistry, createMember, softDeleteMember, updateMember } from "@/server/members/service";
-import { advanceTransfer, cancelStatusRequest, createStatusRequest, decideStatusRequest, purgeMember } from "@/server/workflows/status";
+import { advanceTransfer, applyPendingStatusRequest, cancelStatusRequest, createStatusRequest, purgeMember } from "@/server/workflows/status";
 import { listId, testDb, userWith } from "./helpers";
 
 let db: Db;
@@ -26,29 +26,23 @@ async function activeMember(name: string) {
   return m;
 }
 
-describe("status change requests", () => {
-  it("transfer out: request → approval by pastor → status, history and transfer stage", async () => {
+describe("status changes", () => {
+  it("transfer out applies at once: status, history, audit and transfer stage", async () => {
     const m = await activeMember("Out");
     const doc = await uploadDocument(db, clerk, m.id, "TRANSFER_LETTER", { data: Buffer.from("%PDF-1.4"), name: "letter.pdf" });
     const req = await createStatusRequest(db, clerk, { memberId: m.id, type: "TRANSFER_OUT", reason: "Moving to Ntinda for work", effectiveDate: today, otherChurch: "Ntinda SDA", documentId: doc.id });
-    expect(req).toMatchObject({ state: "PENDING", fromStatus: "ACTIVE", toStatus: "SELF_TRANSFERRED" });
-    // Status unchanged until approved.
-    expect((await db.member.findUniqueOrThrow({ where: { id: m.id } })).status).toBe("ACTIVE");
-    // One pending request at a time.
-    await expect(createStatusRequest(db, clerk, { memberId: m.id, type: "DEATH", reason: "duplicate request", effectiveDate: today })).rejects.toBeInstanceOf(ConflictError);
-    // Clerks can't approve by default.
-    await expect(decideStatusRequest(db, clerk, req.id, true)).rejects.toBeInstanceOf(ForbiddenError);
+    expect(req).toMatchObject({ state: "APPROVED", fromStatus: "ACTIVE", toStatus: "SELF_TRANSFERRED", decidedById: clerk.userId });
 
-    await decideStatusRequest(db, pastor, req.id, true, "Board minute 12/2026");
-    const after = await db.member.findUniqueOrThrow({ where: { id: m.id }, include: { events: true, transfers: true } });
+    const after = await db.member.findUniqueOrThrow({ where: { id: m.id }, include: { events: { where: { type: "TRANSFER_OUT" } }, transfers: true } });
     expect(after.status).toBe("SELF_TRANSFERRED");
     expect(after.events).toHaveLength(1);
-    expect(after.events[0]).toMatchObject({ type: "TRANSFER_OUT", title: "Transferred out to Ntinda SDA", approvedById: pastor.userId, fromStatus: "ACTIVE", toStatus: "SELF_TRANSFERRED" });
+    expect(after.events[0]).toMatchObject({ type: "TRANSFER_OUT", title: "Transferred out to Ntinda SDA", createdById: clerk.userId, fromStatus: "ACTIVE", toStatus: "SELF_TRANSFERRED" });
     expect(after.transfers[0]).toMatchObject({ stage: "BOARD_APPROVED", direction: "OUT" });
     const audit = await db.auditLog.findMany({ where: { memberId: m.id, source: "WORKFLOW" }, orderBy: { id: "asc" } });
-    expect(audit.map((a) => a.action)).toEqual(["CREATE", "APPROVE", "UPDATE"]);
-    expect(audit.find((a) => a.field === "status" && a.action === "UPDATE")).toMatchObject({ actorUserId: pastor.userId, oldValue: "ACTIVE", newValue: "SELF_TRANSFERRED" });
-    await expect(decideStatusRequest(db, pastor, req.id, true)).rejects.toBeInstanceOf(ConflictError);
+    expect(audit.map((a) => a.action)).toEqual(["CREATE", "UPDATE"]);
+    expect(audit.find((a) => a.field === "status" && a.action === "UPDATE")).toMatchObject({ actorUserId: clerk.userId, oldValue: "ACTIVE", newValue: "SELF_TRANSFERRED" });
+    // Already that status.
+    await expect(createStatusRequest(db, clerk, { memberId: m.id, type: "STATUS_UPDATE", toStatus: "SELF_TRANSFERRED", reason: "same status again", effectiveDate: today })).rejects.toBeInstanceOf(ValidationError);
 
     // Letter then completion.
     const t = after.transfers[0];
@@ -59,45 +53,65 @@ describe("status change requests", () => {
     expect((await db.transfer.findUniqueOrThrow({ where: { id: t.id } })).stage).toBe("COMPLETED");
   });
 
-  it("approvers can't approve their own requests; rejection needs a reason and leaves status alone", async () => {
-    const m = await activeMember("Own");
-    const req = await createStatusRequest(db, pastor, { memberId: m.id, type: "DISCIPLINE", reason: "Board decision", effectiveDate: today });
-    await expect(decideStatusRequest(db, pastor, req.id, true)).rejects.toThrow(/Someone else/);
-    const otherPastor = await userWith(db, ["PASTOR"]);
-    await expect(decideStatusRequest(db, otherPastor, req.id, false)).rejects.toBeInstanceOf(ValidationError);
-    await decideStatusRequest(db, otherPastor, req.id, false, "Not yet discussed by the board");
-    expect((await db.member.findUniqueOrThrow({ where: { id: m.id } })).status).toBe("ACTIVE");
-    expect((await db.statusChangeRequest.findUniqueOrThrow({ where: { id: req.id } })).state).toBe("REJECTED");
-  });
-
   it("death, discipline and restoration; discipline history hidden from non-sensitive roles", async () => {
     const m = await activeMember("Disc");
     await addMinistry(db, clerk, m.id, await listId(db, "MINISTRY", "Youth"), await listId(db, "MINISTRY_ROLE", "Member"));
-    const d = await createStatusRequest(db, clerk, { memberId: m.id, type: "DISCIPLINE", reason: "Board decision 3/2026", effectiveDate: today });
-    await decideStatusRequest(db, pastor, d.id, true);
-    const r = await createStatusRequest(db, clerk, { memberId: m.id, type: "RESTORATION", reason: "Restored by the board", effectiveDate: today });
-    await decideStatusRequest(db, pastor, r.id, true);
-    const events = await db.membershipEvent.findMany({ where: { memberId: m.id }, orderBy: { createdAt: "asc" } });
+    await createStatusRequest(db, pastor, { memberId: m.id, type: "DISCIPLINE", reason: "Board decision 3/2026", effectiveDate: today });
+    await createStatusRequest(db, clerk, { memberId: m.id, type: "RESTORATION", reason: "Restored by the board", effectiveDate: today });
+    const events = await db.membershipEvent.findMany({ where: { memberId: m.id, type: { not: "STATUS_CHANGE" } }, orderBy: { createdAt: "asc" } });
     expect(events.map((e) => e.type)).toEqual(["DISCIPLINE", "RESTORATION"]);
     expect((await db.member.findUniqueOrThrow({ where: { id: m.id } })).status).toBe("ACTIVE");
 
     const dead = await activeMember("Dead");
     await expect(createStatusRequest(db, clerk, { memberId: dead.id, type: "DEATH", reason: "x", effectiveDate: today })).rejects.toThrow();
-    const death = await createStatusRequest(db, clerk, { memberId: dead.id, type: "DEATH", reason: "Passed away at Mulago", effectiveDate: today });
-    await decideStatusRequest(db, pastor, death.id, true);
+    await createStatusRequest(db, clerk, { memberId: dead.id, type: "DEATH", reason: "Passed away at Mulago", effectiveDate: today });
     expect((await db.member.findUniqueOrThrow({ where: { id: dead.id } })).status).toBe("DECEASED");
     await expect(createStatusRequest(db, clerk, { memberId: dead.id, type: "DISCIPLINE", reason: "should fail", effectiveDate: today })).rejects.toThrow(/deceased/);
   });
 
-  it("requests need status_request:create and in-scope members; cancel works", async () => {
+  it("needs status_request:create; elders and treasurers can't change status", async () => {
     const m = await activeMember("Scope");
-    const t = await userWith(db, ["TREASURER"]);
-    await expect(createStatusRequest(db, t, { memberId: m.id, type: "DEATH", reason: "Passed away", effectiveDate: today })).rejects.toBeInstanceOf(ForbiddenError);
-    const req = await createStatusRequest(db, clerk, { memberId: m.id, type: "STATUS_UPDATE", toStatus: "IRREGULAR", reason: "Not attended for a year", effectiveDate: today });
-    const other = await userWith(db, ["ASSISTANT_CLERK"]);
-    await expect(cancelStatusRequest(db, other, req.id)).rejects.toBeInstanceOf(ForbiddenError);
-    await cancelStatusRequest(db, clerk, req.id);
-    expect((await db.statusChangeRequest.findUniqueOrThrow({ where: { id: req.id } })).state).toBe("CANCELLED");
+    for (const role of ["TREASURER", "ELDER"] as const) {
+      const u = await userWith(db, [role]);
+      await expect(createStatusRequest(db, u, { memberId: m.id, type: "DEATH", reason: "Passed away", effectiveDate: today })).rejects.toBeInstanceOf(ForbiddenError);
+    }
+    const assistant = await userWith(db, ["ASSISTANT_CLERK"]);
+    await createStatusRequest(db, assistant, { memberId: m.id, type: "STATUS_UPDATE", toStatus: "IRREGULAR", reason: "Not attended for a year", effectiveDate: today });
+    expect((await db.member.findUniqueOrThrow({ where: { id: m.id } })).status).toBe("IRREGULAR");
+  });
+
+  it("the edit form changes status directly and records it in the history", async () => {
+    const m = await activeMember("Edit");
+    await updateMember(db, clerk, m.id, { status: "IRREGULAR" }, { note: "Rarely attends" });
+    const events = await db.membershipEvent.findMany({ where: { memberId: m.id }, orderBy: { createdAt: "asc" } });
+    expect(events.map((e) => [e.type, e.fromStatus, e.toStatus])).toEqual([
+      ["STATUS_CHANGE", null, "ACTIVE"],
+      ["STATUS_CHANGE", "ACTIVE", "IRREGULAR"],
+    ]);
+    expect(events[1]).toMatchObject({ title: "Status: Active → Irregular", detail: "Rarely attends", createdById: clerk.userId });
+  });
+
+  it("unfinished requests from before can be applied or discarded", async () => {
+    const m = await activeMember("Legacy");
+    const mk = () =>
+      db.statusChangeRequest.create({
+        data: { memberId: m.id, type: "STATUS_UPDATE", fromStatus: "ACTIVE", toStatus: "IRREGULAR", reason: "Old pending request", effectiveDate: new Date(`${today}T00:00:00Z`), requestedById: pastor.userId },
+      });
+    const old = await mk();
+    // A new change waits until the old request is finished.
+    await expect(createStatusRequest(db, clerk, { memberId: m.id, type: "DEATH", reason: "Passed away", effectiveDate: today })).rejects.toBeInstanceOf(ConflictError);
+    const other = await userWith(db, ["TREASURER"]);
+    await expect(cancelStatusRequest(db, other, old.id)).rejects.toBeInstanceOf(ForbiddenError);
+    await expect(applyPendingStatusRequest(db, other, old.id)).rejects.toBeInstanceOf(ForbiddenError);
+    await cancelStatusRequest(db, clerk, old.id);
+    expect((await db.statusChangeRequest.findUniqueOrThrow({ where: { id: old.id } })).state).toBe("CANCELLED");
+    expect((await db.member.findUniqueOrThrow({ where: { id: m.id } })).status).toBe("ACTIVE");
+
+    const again = await mk();
+    await applyPendingStatusRequest(db, clerk, again.id);
+    expect((await db.member.findUniqueOrThrow({ where: { id: m.id } })).status).toBe("IRREGULAR");
+    expect((await db.statusChangeRequest.findUniqueOrThrow({ where: { id: again.id } })).state).toBe("APPROVED");
+    await expect(applyPendingStatusRequest(db, clerk, again.id)).rejects.toBeInstanceOf(ConflictError);
   });
 });
 

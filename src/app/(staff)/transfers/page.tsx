@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { DecisionButtons, TransferStageButtons } from "@/components/workflows/workflow-forms";
+import { PendingRequestButtons, TransferStageButtons } from "@/components/workflows/workflow-forms";
 import { PageHeader, TopBar } from "@/components/shell/topbar";
 import { StatusBadge } from "@/components/ui/badges";
 import type { Prisma } from "@/generated/prisma/client";
@@ -8,16 +8,17 @@ import { formatDate, STATUS_META, type StatusKey } from "@/lib/labels";
 import { requirePermission } from "@/server/auth/session";
 import { can, memberScopeWhere } from "@/server/authz/policy";
 import { db } from "@/server/db";
-import { REQUEST_TYPES } from "@/server/workflows/status";
+import { canChangeStatus, REQUEST_TYPES } from "@/server/workflows/status";
 
 export const metadata: Metadata = { title: "Transfers & status" };
 
-const STAGES = ["REQUESTED", "LETTER", "BOARD_APPROVED", "COMPLETED"] as const;
+const STAGES = ["REQUESTED", "LETTER", "COMPLETED"] as const;
+const OUTCOME: Record<string, string> = { APPROVED: "Applied", REJECTED: "Rejected", CANCELLED: "Discarded", PENDING: "Unfinished" };
 
 export default async function TransfersPage({ searchParams }: { searchParams: Promise<{ tab?: string }> }) {
   const ctx = await requirePermission("transfer", "read");
   const { tab: t } = await searchParams;
-  const tab = t === "transfers" || t === "history" ? t : "inbox";
+  const tab = t === "transfers" ? t : "history";
   const scope = memberScopeWhere(ctx) as Prisma.MemberWhereInput;
   const include = {
     member: { select: { id: true, memberId: true, lastName: true, firstName: true, status: true } },
@@ -38,40 +39,29 @@ export default async function TransfersPage({ searchParams }: { searchParams: Pr
   const users = new Map(
     (await db.user.findMany({ where: { id: { in: [...pending, ...history].flatMap((r) => [r.requestedById, r.decidedById]).filter((x): x is string => Boolean(x)) } }, select: { id: true, name: true } })).map((u) => [u.id, u.name]),
   );
-  const canApprove = can(ctx, "status_request", "approve");
+  const canChange = canChangeStatus(ctx);
   const canUpdateTransfer = can(ctx, "transfer", "update");
   const openTransfers = transfers.filter((x) => x.stage !== "COMPLETED");
 
   const tabs = [
-    { key: "inbox", label: canApprove ? "Approval inbox" : "Pending requests", count: pending.length },
+    { key: "history", label: "Status changes" },
     { key: "transfers", label: "Transfers", count: openTransfers.length },
-    { key: "history", label: "Decided" },
   ];
 
   return (
     <>
       <TopBar />
       <main className="p-4 md:p-7">
-        <PageHeader title="Transfers & status changes" subtitle="Status changes go through approval. Approved changes update the member’s status and history.">
-          {can(ctx, "status_request", "create") && <Link href="/transfers/new" className="btn btn-primary">New request</Link>}
+        <PageHeader title="Transfers & status changes" subtitle="Status changes apply as soon as they are saved and are recorded in the member’s history.">
+          {canChange && <Link href="/transfers/new" className="btn btn-primary">Change status</Link>}
         </PageHeader>
-        <nav aria-label="Sections" className="-mx-4 mb-5 flex overflow-x-auto border-b border-line px-4 md:mx-0 md:px-0">
-          {tabs.map((x) => (
-            <Link key={x.key} href={`/transfers${x.key === "inbox" ? "" : `?tab=${x.key}`}`} aria-current={tab === x.key ? "page" : undefined}
-              className={`flex min-h-[44px] items-center gap-2 whitespace-nowrap px-4 text-[14px] ${tab === x.key ? "border-b-2 border-primary font-semibold" : "text-ink-2"}`}>
-              {x.label}
-              {x.count !== undefined && <span className={`rounded-full px-2 text-[12px] ${tab === x.key ? "bg-primary text-primary-ink" : "bg-surface-2"}`}>{x.count}</span>}
-            </Link>
-          ))}
-        </nav>
-
-        {tab === "inbox" &&
-          (pending.length === 0 ? (
-            <Empty title="Nothing waiting for approval">New transfer, death, discipline and restoration requests appear here.</Empty>
-          ) : (
+        {pending.length > 0 && (
+          <section aria-labelledby="unfinished" className="mb-6">
+            <h2 id="unfinished" className="text-[17px] font-semibold">Unfinished requests</h2>
+            <p className="mt-1 mb-3 text-[14px] text-ink-2">These were made when status changes still needed approval. Apply or discard each one.</p>
             <ul className="space-y-3">
               {pending.map((r) => (
-                <li key={r.id} className="card grid gap-4 p-5 md:grid-cols-[minmax(0,1fr)_320px]">
+                <li key={r.id} className="card grid gap-4 p-5 md:grid-cols-[minmax(0,1fr)_260px]">
                   <div>
                     <p className="text-[13px] font-semibold uppercase tracking-wider text-ink-2">{REQUEST_TYPES[r.type].label}</p>
                     <Link href={`/members/${r.member.id}`} className="text-[18px] font-semibold hover:underline">{r.member.lastName}, {r.member.firstName}</Link>
@@ -88,21 +78,32 @@ export default async function TransfersPage({ searchParams }: { searchParams: Pr
                       )}
                     </p>
                   </div>
-                  <DecisionButtons requestId={r.id} canApprove={canApprove} ownRequest={r.requestedById === ctx.userId} canCancel={r.requestedById === ctx.userId || canApprove} />
+                  <PendingRequestButtons requestId={r.id} canApply={canChange} canDiscard={canChange || r.requestedById === ctx.userId} />
                 </li>
               ))}
             </ul>
+          </section>
+        )}
+
+        <nav aria-label="Sections" className="-mx-4 mb-5 flex overflow-x-auto border-b border-line px-4 md:mx-0 md:px-0">
+          {tabs.map((x) => (
+            <Link key={x.key} href={`/transfers${x.key === "history" ? "" : `?tab=${x.key}`}`} aria-current={tab === x.key ? "page" : undefined}
+              className={`flex min-h-[44px] items-center gap-2 whitespace-nowrap px-4 text-[14px] ${tab === x.key ? "border-b-2 border-primary font-semibold" : "text-ink-2"}`}>
+              {x.label}
+              {x.count !== undefined && <span className={`rounded-full px-2 text-[12px] ${tab === x.key ? "bg-primary text-primary-ink" : "bg-surface-2"}`}>{x.count}</span>}
+            </Link>
           ))}
+        </nav>
 
         {tab === "transfers" &&
           (transfers.length === 0 ? (
-            <Empty title="No transfers yet">Create a transfer in or out with “New request”.</Empty>
+            <Empty title="No transfers yet">Record a transfer in or out with “Change status”.</Empty>
           ) : (
             <ul className="space-y-3">
               {transfers.map((x) => {
                 const letterDone = Boolean(x.letterSentAt || x.letterReceivedAt);
                 const reached = (s: (typeof STAGES)[number]) =>
-                  s === "REQUESTED" ? true : s === "LETTER" ? letterDone : s === "BOARD_APPROVED" ? Boolean(x.boardApprovedAt) : x.stage === "COMPLETED";
+                  s === "REQUESTED" ? Boolean(x.boardApprovedAt) : s === "LETTER" ? letterDone : x.stage === "COMPLETED";
                 return (
                   <li key={x.id} className="card p-5">
                     <div className="flex flex-wrap items-baseline justify-between gap-2">
@@ -110,13 +111,13 @@ export default async function TransfersPage({ searchParams }: { searchParams: Pr
                         <span className="text-[13px] font-semibold uppercase tracking-wider text-ink-2">Transfer {x.direction === "OUT" ? "out to" : "in from"} {x.otherChurch}</span>
                         <Link href={`/members/${x.member.id}`} className="block text-[17px] font-semibold hover:underline">{x.member.lastName}, {x.member.firstName} <span className="mono text-[13px] font-normal text-ink-3">{x.member.memberId}</span></Link>
                       </span>
-                      <span className="text-[13px] text-ink-2">Requested {formatDate(x.requestedAt)}{x.statusRequest?.state === "REJECTED" ? " · request rejected" : ""}</span>
+                      <span className="text-[13px] text-ink-2">Recorded {formatDate(x.requestedAt)}{x.statusRequest?.state === "REJECTED" ? " · request rejected" : x.statusRequest?.state === "PENDING" ? " · unfinished request" : ""}</span>
                     </div>
-                    <ol className="mt-4 grid grid-cols-4 gap-2 text-[13px]" aria-label="Transfer stages">
+                    <ol className="mt-4 grid grid-cols-3 gap-2 text-[13px]" aria-label="Transfer stages">
                       {STAGES.map((s) => (
                         <li key={s} className={`rounded-[6px] border px-2 py-2 text-center ${reached(s) ? "border-primary bg-primary-soft font-semibold text-primary" : "border-line text-ink-3"}`}>
                           {reached(s) ? "✓ " : ""}
-                          {s === "REQUESTED" ? "Requested" : s === "LETTER" ? (x.direction === "OUT" ? "Letter sent" : "Letter received") : s === "BOARD_APPROVED" ? "Board approved" : "Completed"}
+                          {s === "REQUESTED" ? "Status updated" : s === "LETTER" ? (x.direction === "OUT" ? "Letter sent" : "Letter received") : "Completed"}
                         </li>
                       ))}
                     </ol>
@@ -131,19 +132,19 @@ export default async function TransfersPage({ searchParams }: { searchParams: Pr
 
         {tab === "history" &&
           (history.length === 0 ? (
-            <Empty title="No decisions yet">Approved, rejected and cancelled requests appear here.</Empty>
+            <Empty title="No status changes yet">Transfers, deaths, discipline, restorations and other status changes appear here.</Empty>
           ) : (
             <div className="card overflow-x-auto">
               <table className="w-full text-[14px]">
                 <thead className="bg-surface-2 text-left text-[11px] uppercase tracking-wider text-ink-2">
-                  <tr><th className="px-4 py-2.5">Member</th><th className="px-4 py-2.5">Request</th><th className="px-4 py-2.5">Outcome</th><th className="px-4 py-2.5">Decided by</th><th className="px-4 py-2.5">When</th></tr>
+                  <tr><th className="px-4 py-2.5">Member</th><th className="px-4 py-2.5">Change</th><th className="px-4 py-2.5">Outcome</th><th className="px-4 py-2.5">By</th><th className="px-4 py-2.5">When</th></tr>
                 </thead>
                 <tbody>
                   {history.map((r) => (
                     <tr key={r.id} className="border-t border-line align-top">
                       <td className="px-4 py-2.5"><Link className="text-primary hover:underline" href={`/members/${r.member.id}`}>{r.member.lastName}, {r.member.firstName}</Link></td>
                       <td className="px-4 py-2.5">{REQUEST_TYPES[r.type].label} → {STATUS_META[r.toStatus as StatusKey].label}</td>
-                      <td className="px-4 py-2.5">{r.state.charAt(0) + r.state.slice(1).toLowerCase()}{r.decisionNote ? ` — ${r.decisionNote}` : ""}</td>
+                      <td className="px-4 py-2.5">{OUTCOME[r.state]}{r.decisionNote ? ` — ${r.decisionNote}` : ""}</td>
                       <td className="px-4 py-2.5">{r.decidedById ? users.get(r.decidedById) : "—"}</td>
                       <td className="px-4 py-2.5 whitespace-nowrap">{r.decidedAt ? formatDate(r.decidedAt) : "—"}</td>
                     </tr>

@@ -3,9 +3,9 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
-import { activateAction, requestReactivationAction } from "@/app/(staff)/dormant/actions";
+import { activateAction } from "@/app/(staff)/dormant/actions";
 import { StatusBadge } from "@/components/ui/badges";
-import { Dialog } from "@/components/ui/dialog";
+import { STATUS_META } from "@/lib/labels";
 import { toast } from "@/lib/toast";
 
 export type DormantRow = {
@@ -19,70 +19,13 @@ export type DormantRow = {
   pendingTo: string | null;
 };
 
-const today = () => new Date().toISOString().slice(0, 10);
-
-function ReactivateDialog({ row, onClose }: { row: DormantRow; onClose: () => void }) {
-  const router = useRouter();
-  const [toStatus, setTo] = useState<"ACTIVE" | "IRREGULAR">("ACTIVE");
-  const [reason, setReason] = useState("");
-  const [date, setDate] = useState(today());
-  const [pending, start] = useTransition();
-  return (
-    <Dialog
-      open
-      onClose={onClose}
-      title={`Reactivate ${row.name}`}
-      footer={
-        <>
-          <button type="button" className="btn btn-secondary" onClick={onClose}>Cancel</button>
-          <button
-            type="button"
-            className="btn btn-primary"
-            disabled={pending || reason.trim().length < 5}
-            onClick={() =>
-              start(async () => {
-                const r = await requestReactivationAction({ memberId: row.id, toStatus, reason, effectiveDate: date });
-                toast.result(r);
-                if (r.ok) {
-                  onClose();
-                  router.refresh();
-                }
-              })
-            }
-          >
-            {pending ? "Sending…" : "Send for approval"}
-          </button>
-        </>
-      }
-    >
-      <p className="text-[14px] text-ink-2">
-        {row.memberId} is currently <strong className="text-ink">{row.status ? row.status.replace(/_/g, " ").toLowerCase() : "not recorded"}</strong>. Changing an existing status needs the Pastor’s approval; the member appears in reports once it is approved.
-      </p>
-      <fieldset className="mt-4">
-        <legend className="field-label">New status</legend>
-        <div className="flex gap-4">
-          {(["ACTIVE", "IRREGULAR"] as const).map((s) => (
-            <label key={s} className="flex min-h-[44px] items-center gap-2">
-              <input type="radio" name="to" checked={toStatus === s} onChange={() => setTo(s)} className="size-4 accent-[var(--primary)]" />
-              {s === "ACTIVE" ? "Active" : "Irregular"}
-            </label>
-          ))}
-        </div>
-      </fieldset>
-      <label htmlFor="re-reason" className="field-label mt-3">Reason</label>
-      <textarea id="re-reason" className="input min-h-[90px] py-2" value={reason} onChange={(e) => setReason(e.target.value)} placeholder="e.g. Returned and attending regularly since August" />
-      <label htmlFor="re-date" className="field-label mt-3">Effective date</label>
-      <input id="re-date" type="date" className="input max-w-xs" value={date} max={today()} onChange={(e) => setDate(e.target.value)} />
-    </Dialog>
-  );
-}
-
-export function DormantTable({ rows, canActivate, canRequest }: { rows: DormantRow[]; canActivate: boolean; canRequest: boolean }) {
+export function DormantTable({ rows, canActivate, canChange }: { rows: DormantRow[]; canActivate: boolean; canChange: boolean }) {
   const router = useRouter();
   const [selected, setSelected] = useState<Set<string>>(new Set());
-  const [dialog, setDialog] = useState<DormantRow | null>(null);
   const [pending, start] = useTransition();
-  const selectable = rows.filter((r) => r.status === null && canActivate);
+  // A first status needs profile editing rights; changing an existing one needs the status-change permission.
+  const canUpdate = (r: DormantRow) => r.status !== "DECEASED" && !r.pendingTo && (r.status === null ? canActivate : canChange);
+  const selectable = rows.filter(canUpdate);
   const allSelected = selectable.length > 0 && selectable.every((r) => selected.has(r.id));
 
   const activate = (ids: string[], status: "ACTIVE" | "IRREGULAR") =>
@@ -113,7 +56,7 @@ export function DormantTable({ rows, canActivate, canRequest }: { rows: DormantR
                 {selectable.length > 0 && (
                   <input
                     type="checkbox"
-                    aria-label="Select all members without a status on this page"
+                    aria-label="Select all members on this page"
                     className="size-4"
                     checked={allSelected}
                     onChange={() => setSelected(allSelected ? new Set() : new Set(selectable.map((r) => r.id)))}
@@ -132,7 +75,7 @@ export function DormantTable({ rows, canActivate, canRequest }: { rows: DormantR
             {rows.map((r) => (
               <tr key={r.id} className={`border-t border-line align-middle ${selected.has(r.id) ? "bg-primary-soft/50" : ""}`}>
                 <td className="px-3 py-2.5">
-                  {r.status === null && canActivate && (
+                  {canUpdate(r) && (
                     <input
                       type="checkbox"
                       aria-label={`Select ${r.name}`}
@@ -160,17 +103,15 @@ export function DormantTable({ rows, canActivate, canRequest }: { rows: DormantR
                     <span className="text-[13px] text-ink-3">Kept for the record</span>
                   ) : r.pendingTo ? (
                     <Link href="/transfers" className="inline-flex rounded-full bg-[color-mix(in_srgb,var(--status-irregular)_16%,transparent)] px-2.5 py-1 text-[12px] font-semibold text-[var(--status-irregular)]">
-                      Awaiting approval → {r.pendingTo === "ACTIVE" ? "Active" : "Irregular"}
+                      Unfinished request → {STATUS_META[r.pendingTo as keyof typeof STATUS_META]?.label ?? r.pendingTo}
                     </Link>
-                  ) : r.status === null ? (
-                    canActivate && (
+                  ) : (
+                    canUpdate(r) && (
                       <span className="inline-flex gap-2">
                         <button type="button" disabled={pending} className="btn btn-primary h-9 min-h-9 px-3 text-[13px]" onClick={() => activate([r.id], "ACTIVE")}>Active</button>
                         <button type="button" disabled={pending} className="btn btn-secondary h-9 min-h-9 px-3 text-[13px]" onClick={() => activate([r.id], "IRREGULAR")}>Irregular</button>
                       </span>
                     )
-                  ) : (
-                    canRequest && <button type="button" className="btn btn-secondary h-9 min-h-9 px-3 text-[13px]" onClick={() => setDialog(r)}>Request reactivation</button>
                   )}
                 </td>
               </tr>
@@ -178,7 +119,6 @@ export function DormantTable({ rows, canActivate, canRequest }: { rows: DormantR
           </tbody>
         </table>
       </div>
-      {dialog && <ReactivateDialog row={dialog} onClose={() => setDialog(null)} />}
     </>
   );
 }

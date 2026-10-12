@@ -23,9 +23,9 @@ export default async function NewRequestPage({ searchParams }: { searchParams: P
       <TopBar />
       <main className="p-4 md:p-7 max-w-3xl">
         <nav aria-label="Breadcrumb" className="mb-3 text-[14px] text-ink-2">
-          <Link href="/transfers" className="hover:underline">Transfers & status</Link> / New request
+          <Link href="/transfers" className="hover:underline">Transfers & status</Link> / Change status
         </nav>
-        <PageHeader title="Change membership status" subtitle="Status changes need approval from the Pastor or church board. The member’s history records who approved it." />
+        <PageHeader title="Change membership status" subtitle="The new status applies as soon as you save. The member’s history records the change, its reason and who made it." />
         <section className="card p-5">
           <NewRequestForm member={m ? { id: m.id, label: `${m.lastName}, ${m.firstName} · ${m.memberId}`, status: m.status } : null} />
         </section>

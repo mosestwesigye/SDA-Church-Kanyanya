@@ -3,7 +3,7 @@ import type { MembershipStatus, Prisma } from "@/generated/prisma/client";
 import { assertCan, can, memberScopeWhere, type AuthContext } from "../authz/policy";
 import type { Db, DbOrTx } from "../db";
 import { ForbiddenError, ValidationError } from "../errors";
-import { createStatusRequest } from "../workflows/status";
+import { canChangeStatus, createStatusRequest } from "../workflows/status";
 import { directoryQuerySchema, listMembers, type DirectoryRow } from "./directory";
 import { dormantWhere } from "./register";
 import { updateMember } from "./service";
@@ -58,48 +58,41 @@ export async function listDormant(db: DbOrTx, ctx: AuthContext, p: { tab?: strin
 const activeStatus = z.enum(["ACTIVE", "IRREGULAR"]);
 
 /**
- * Give members with no status yet an Active or Irregular status (audited
- * through the member service). Members who already have a status need an
- * approved request instead and are skipped.
+ * Move dormant members to Active or Irregular. A first status is recorded
+ * through the member service; an existing status is changed through the
+ * status workflow (restoration for members under discipline), which applies
+ * at once and writes the member's history. The deceased, and members with an
+ * unfinished request from before, are skipped.
  */
 export async function activateMembers(db: Db, ctx: AuthContext, ids: string[], statusInput: string) {
   const status = activeStatus.parse(statusInput);
   if (ids.length === 0) throw new ValidationError("Choose at least one member.");
   if (ids.length > 200) throw new ValidationError("Update at most 200 members at a time.");
-  const found = await db.member.findMany({ where: { AND: [live(ctx), { id: { in: ids } }] }, select: { id: true, status: true } });
+  const found = await db.member.findMany({
+    where: { AND: [live(ctx), { id: { in: ids } }] },
+    select: { id: true, status: true, statusRequests: { where: { state: "PENDING" }, select: { id: true } } },
+  });
+  if (found.some((m) => m.status !== null && m.status !== "DECEASED") && !canChangeStatus(ctx)) throw new ForbiddenError("You can’t change membership status.");
+  const effectiveDate = new Date().toLocaleDateString("en-CA", { timeZone: "Africa/Kampala" });
   let done = 0;
   let skipped = ids.length - found.length;
   for (const m of found) {
-    if (m.status !== null) {
+    if (m.status === "DECEASED" || m.statusRequests.length > 0) {
       skipped++;
-      continue;
+    } else if (m.status === null) {
+      await updateMember(db, ctx, m.id, { status }, { note: "Status recorded from the dormant list" });
+      done++;
+    } else {
+      const restoration = (m.status as MembershipStatus) === "UNDER_DISCIPLINE" && status === "ACTIVE";
+      await createStatusRequest(db, ctx, {
+        memberId: m.id,
+        type: restoration ? "RESTORATION" : "STATUS_UPDATE",
+        ...(restoration ? {} : { toStatus: status }),
+        reason: "Status updated from the dormant list",
+        effectiveDate,
+      });
+      done++;
     }
-    await updateMember(db, ctx, m.id, { status }, { note: "Status recorded from the dormant list" });
-    done++;
   }
   return { done, skipped };
-}
-
-const reactivationInput = z.object({
-  memberId: z.string().min(1),
-  toStatus: activeStatus,
-  reason: z.string().trim().min(5, "Give the reason (at least a few words)").max(1000),
-  effectiveDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Choose a date"),
-});
-
-/** Members who already have a dormant status come back through the approval workflow. */
-export async function requestReactivation(db: Db, ctx: AuthContext, input: z.input<typeof reactivationInput>) {
-  const v = reactivationInput.parse(input);
-  const m = await db.member.findFirst({ where: { AND: [live(ctx), { id: v.memberId }] }, select: { status: true } });
-  if (!m) throw new ValidationError("This member is not on the dormant list.");
-  if (m.status === null) throw new ValidationError("This member has no status yet; set it directly.");
-  if (m.status === "DECEASED") throw new ValidationError("This member is recorded as deceased.");
-  const restoration = (m.status as MembershipStatus) === "UNDER_DISCIPLINE" && v.toStatus === "ACTIVE";
-  return createStatusRequest(db, ctx, {
-    memberId: v.memberId,
-    type: restoration ? "RESTORATION" : "STATUS_UPDATE",
-    ...(restoration ? {} : { toStatus: v.toStatus }),
-    reason: v.reason,
-    effectiveDate: v.effectiveDate,
-  });
 }

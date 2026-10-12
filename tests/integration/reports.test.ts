@@ -6,12 +6,11 @@ import { logExport } from "@/server/exports/tabular";
 import { addMinistry, createMember, updateMember } from "@/server/members/service";
 import { reportPdf, reportXlsx } from "@/server/reports/render";
 import { availableReports, buildReport, parseReportParams, quarterRange } from "@/server/reports/reports";
-import { createStatusRequest, decideStatusRequest } from "@/server/workflows/status";
+import { createStatusRequest } from "@/server/workflows/status";
 import { listId, testDb, userWith } from "./helpers";
 
 let db: Db;
 let clerk: Awaited<ReturnType<typeof userWith>>;
-let pastor: Awaited<ReturnType<typeof userWith>>;
 const now = new Date();
 const year = now.getUTCFullYear();
 const quarter = Math.floor(now.getUTCMonth() / 3) + 1;
@@ -19,7 +18,6 @@ const quarter = Math.floor(now.getUTCMonth() / 3) + 1;
 beforeAll(async () => {
   db = await testDb();
   clerk = await userWith(db, ["CHURCH_CLERK"]);
-  pastor = await userWith(db, ["PASTOR"]);
 });
 afterAll(async () => {
   await db.$disconnect();
@@ -93,7 +91,7 @@ describe("report permissions", () => {
 });
 
 describe("quarterly report", () => {
-  it("counts an approved death as a loss in its quarter and keeps earlier quarters' closing figure", async () => {
+  it("counts a recorded death as a loss in its quarter and keeps earlier quarters' closing figure", async () => {
     const m = await createMember(db, clerk, { lastName: "Quarter", firstName: "Loss" });
     await updateMember(db, clerk, m.id, { status: "ACTIVE" });
     const prevQ = quarter === 1 ? { year: year - 1, quarter: 4 } : { year, quarter: quarter - 1 };
@@ -101,8 +99,7 @@ describe("quarterly report", () => {
     const before = await buildReport(db, clerk, "quarterly", { year, quarter });
     const prevBefore = await buildReport(db, clerk, "quarterly", prevQ);
 
-    const req = await createStatusRequest(db, clerk, { memberId: m.id, type: "DEATH", reason: "Passed away at home", effectiveDate: now.toISOString().slice(0, 10) });
-    await decideStatusRequest(db, pastor, req.id, true);
+    await createStatusRequest(db, clerk, { memberId: m.id, type: "DEATH", reason: "Passed away at home", effectiveDate: now.toISOString().slice(0, 10) });
 
     const after = await buildReport(db, clerk, "quarterly", { year, quarter });
     expect(figure(after, "Membership", "Losses")).toBe(figure(before, "Membership", "Losses") + 1);
@@ -110,7 +107,7 @@ describe("quarterly report", () => {
     expect(figure(after, "Membership", "Membership at start of quarter")).toBe(figure(before, "Membership", "Membership at start of quarter"));
     expect(figure(after, "Losses by type", "Death")).toBeGreaterThanOrEqual(1);
     const changes = after.sections.find((s) => s.table)!.table!.rows;
-    expect(changes.find((r) => r.memberId === m.memberId)).toMatchObject({ type: "Death", direction: "Loss" });
+    expect(changes.find((r) => r.memberId === m.memberId && r.type === "Death")).toMatchObject({ direction: "Loss" });
 
     // Movement after the previous quarter ended must not change its closing figure.
     const prevAfter = await buildReport(db, clerk, "quarterly", prevQ);
@@ -151,8 +148,7 @@ describe("more reports", () => {
   it("membership changes cover a date range and count gains and losses", async () => {
     const m = await createMember(db, clerk, { lastName: "Moves", firstName: "Range" });
     await updateMember(db, clerk, m.id, { status: "ACTIVE" });
-    const req = await createStatusRequest(db, clerk, { memberId: m.id, type: "DEATH", reason: "Passed away", effectiveDate: now.toISOString().slice(0, 10) });
-    await decideStatusRequest(db, pastor, req.id, true);
+    await createStatusRequest(db, clerk, { memberId: m.id, type: "DEATH", reason: "Passed away", effectiveDate: now.toISOString().slice(0, 10) });
     const today = now.toISOString().slice(0, 10);
     const r = await buildReport(db, clerk, "movements", parseReportParams("movements", { from: today, to: today, type: "DEATH" }));
     const row = r.sections.find((s) => s.table)!.table!.rows.find((x) => x.memberId === m.memberId);

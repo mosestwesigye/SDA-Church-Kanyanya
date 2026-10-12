@@ -76,7 +76,7 @@ export default async function EditMemberPage({ params, searchParams }: { params:
             profile: canOnMember(ctx, "member.profile", "update", row),
             contact: canOnMember(ctx, "member.contact", "update", row),
             sensitive: canOnMember(ctx, "member.sensitive", "update", row),
-            statusEditable: !m.status,
+            statusEditable: !m.status || can(ctx, "status_request", "create"),
             manageMinistry: false,
             household: canHousehold,
           }}

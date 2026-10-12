@@ -2,7 +2,7 @@
 
 import { useRouter } from "next/navigation";
 import { useEffect, useState, useTransition } from "react";
-import { advanceTransferAction, cancelRequestAction, createRequestAction, decideAction } from "@/app/(staff)/transfers/actions";
+import { advanceTransferAction, applyPendingAction, cancelRequestAction, createRequestAction } from "@/app/(staff)/transfers/actions";
 import { searchMembersAction } from "@/app/(staff)/members/form-actions";
 import { STATUS_KEYS, STATUS_META } from "@/lib/labels";
 import { toast } from "@/lib/toast";
@@ -31,9 +31,9 @@ function Msg({ msg }: { msg: { ok: boolean; text: string } | null }) {
 }
 
 const TYPES = [
-  { id: "TRANSFER_OUT", label: "Transfer out", help: "Member is moving to another church. Status becomes Self Transferred when approved." },
-  { id: "TRANSFER_IN", label: "Transfer in", help: "Member’s letter is coming from another church. Status becomes Active when approved." },
-  { id: "DEATH", label: "Record a death", help: "Status becomes Deceased when approved." },
+  { id: "TRANSFER_OUT", label: "Transfer out", help: "Member is moving to another church. Status becomes Self Transferred." },
+  { id: "TRANSFER_IN", label: "Transfer in", help: "Member’s letter is coming from another church. Status becomes Active." },
+  { id: "DEATH", label: "Record a death", help: "Status becomes Deceased." },
   { id: "DISCIPLINE", label: "Discipline", help: "Status becomes Under Discipline. Visible only to Clerk, Pastor and Elders." },
   { id: "RESTORATION", label: "Restoration", help: "Returns the member to Active." },
   { id: "STATUS_UPDATE", label: "Other status change", help: "For example Active → Irregular, or Left the Faith." },
@@ -93,7 +93,7 @@ export function NewRequestForm({ member }: { member: { id: string; label: string
       </fieldset>
 
       <fieldset>
-        <legend className="field-label">Request</legend>
+        <legend className="field-label">Change</legend>
         <div className="grid gap-2 sm:grid-cols-2">
           {TYPES.map((t) => (
             <label key={t.id} className={`flex cursor-pointer gap-3 rounded-[8px] border p-3 ${type === t.id ? "border-primary bg-primary-soft" : "border-line"}`}>
@@ -134,34 +134,24 @@ export function NewRequestForm({ member }: { member: { id: string; label: string
       </div>
       <div>
         <label htmlFor="reason" className="field-label">Reason</label>
-        <textarea id="reason" name="reason" rows={3} className="input py-2" required minLength={5} placeholder="e.g. Board meeting of 14 Sep approved the transfer request." />
+        <textarea id="reason" name="reason" rows={3} className="input py-2" required minLength={5} placeholder="e.g. Transfer letter received from Ntinda SDA Church on 14 Sep." />
         {errors.reason && <p className="text-[13px] text-error">{errors.reason}</p>}
       </div>
       <Msg msg={msg} />
-      <button className="btn btn-primary" disabled={pending || !picked}>{pending ? "Sending…" : "Send for approval"}</button>
+      <button className="btn btn-primary" disabled={pending || !picked}>{pending ? "Saving…" : "Save status change"}</button>
     </form>
   );
 }
 
-export function DecisionButtons({ requestId, canApprove, canCancel, ownRequest }: { requestId: string; canApprove: boolean; canCancel: boolean; ownRequest: boolean }) {
-  const [note, setNote] = useState("");
+/** Requests left open from before status changes stopped needing approval. */
+export function PendingRequestButtons({ requestId, canApply, canDiscard }: { requestId: string; canApply: boolean; canDiscard: boolean }) {
   const { pending, msg, run } = useRun();
   return (
     <div className="space-y-2">
-      {canApprove && !ownRequest && (
-        <>
-          <label className="sr-only" htmlFor={`note-${requestId}`}>Decision note</label>
-          <input id={`note-${requestId}`} className="input" placeholder="Note (required to reject)" value={note} onChange={(e) => setNote(e.target.value)} />
-          <div className="flex flex-wrap gap-2">
-            <button type="button" className="btn btn-primary" disabled={pending} onClick={() => run(() => decideAction(requestId, true, note))}>Approve</button>
-            <button type="button" className="btn btn-danger" disabled={pending || !note.trim()} onClick={() => run(() => decideAction(requestId, false, note))}>Reject</button>
-          </div>
-        </>
-      )}
-      {canApprove && ownRequest && <p className="text-[13px] text-ink-2">You made this request, so another approver must decide it.</p>}
-      {canCancel && (
-        <button type="button" className="text-[14px] text-error min-h-[44px]" disabled={pending} onClick={() => run(() => cancelRequestAction(requestId))}>Cancel request</button>
-      )}
+      <div className="flex flex-wrap gap-2">
+        {canApply && <button type="button" className="btn btn-primary" disabled={pending} onClick={() => run(() => applyPendingAction(requestId))}>Apply change</button>}
+        {canDiscard && <button type="button" className="btn btn-secondary" disabled={pending} onClick={() => run(() => cancelRequestAction(requestId))}>Discard</button>}
+      </div>
       <Msg msg={msg} />
     </div>
   );

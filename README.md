@@ -67,7 +67,7 @@ pnpm build && pnpm test:e2e            # or E2E_BASE_URL=http://localhost:3001 p
 - PDFs are generated on the server with `pdf-lib`. It is pure JavaScript, so no headless browser is needed on Vercel.
 - Downloads need `export:run` and an acknowledged privacy notice. Each download is written to `ExportLog` and the audit trail.
 - Report rows use the same scoped, field-projected queries as the directory, and columns the viewer may not read are left out.
-- Quarterly totals count members "on the books": Active, Irregular, Under discipline, or status not recorded. Gains and losses come from approved status changes.
+- Quarterly totals count the active register (Active and Irregular). Gains and losses come from recorded status changes.
 
 ## Member self-service
 
@@ -80,11 +80,17 @@ Members sign in at `/login/phone` with the phone number on their record and a 6-
 - Approved fields are written through the audited member service with source `self-service`.
 - SMS goes through Africa's Talking (`AT_USERNAME`, `AT_API_KEY`, optional `AT_SENDER_ID`). In development the code is logged with the phone number masked.
 
+## Status changes
+
+Changing a membership status needs no approval. The Clerk, Assistant Clerk and Pastor (`status_request:create`, shown as “Membership status — Change” under Roles & permissions) record transfers, deaths, discipline, restorations and other changes under **Transfers & status → Change status**, or edit the status on the member form. The change applies at once and is written to the member's history (date, reason, who made it) and the audit log. Transfer letters are then tracked to completion. Requests left open from when approval was required are listed as *Unfinished requests* to apply or discard.
+
+Members' self-service corrections are still reviewed by the clerk (below).
+
 ## Active register and dormant members
 
 On the Church Clerk's guidance, the dashboard and reports count only **Active** and **Irregular** members (the active register). Everyone else is listed under **Dormant members**:
 - *Not recorded* (no status yet): the clerk marks them Active or Irregular directly, one by one or in bulk.
-- *Self transferred*, *Under discipline*, *Left the faith*: the clerk sends a reactivation request; they return to the active register once the Pastor approves (restoration for discipline).
+- *Self transferred*, *Under discipline*, *Left the faith*: the clerk marks them Active or Irregular directly (marking a member under discipline Active records a restoration).
 - *Deceased*: kept for the record only.
 
 The quarterly report counts the active register; a status recorded for the first time is shown with records added, not as a membership gain.

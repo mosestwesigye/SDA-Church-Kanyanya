@@ -43,9 +43,18 @@ async function scopedMember(db: Db, ctx: AuthContext, id: string) {
   return m;
 }
 
-/** Create a pending status-change request (and a transfer record for transfers). */
+/** Who may change a membership status (Clerk, Assistant Clerk and Pastor by default). */
+export function canChangeStatus(ctx: AuthContext) {
+  return can(ctx, "status_request", "create");
+}
+
+/**
+ * Change a member's status. Changes apply immediately (no approval step); the
+ * change is still recorded as a request with its reason and date, written to
+ * the member's history, and audited.
+ */
 export async function createStatusRequest(db: Db, ctx: AuthContext, input: z.input<typeof requestInput>) {
-  assertCan(ctx, "status_request", "create");
+  if (!canChangeStatus(ctx)) throw new ForbiddenError("You can’t change membership status.");
   const v = requestInput.parse(input);
   const m = await scopedMember(db, ctx, v.memberId);
   if (m.deletedAt) throw new ValidationError("Restore this member first.");
@@ -53,7 +62,7 @@ export async function createStatusRequest(db: Db, ctx: AuthContext, input: z.inp
   if (to === m.status) throw new ValidationError(`${m.memberId} is already ${STATUS_META[to].label}.`);
   if (m.status === "DECEASED" && v.type !== "STATUS_UPDATE") throw new ValidationError("This member is recorded as deceased.");
   const open = await db.statusChangeRequest.findFirst({ where: { memberId: m.id, state: "PENDING" } });
-  if (open) throw new ConflictError("There is already a pending request for this member. Decide or cancel it first.");
+  if (open) throw new ConflictError("This member has an unfinished request from before. Apply or discard it under Transfers & status first.");
   if (v.documentId) {
     const doc = await db.document.findFirst({ where: { id: v.documentId, memberId: m.id, deletedAt: null } });
     if (!doc) throw new ValidationError("Supporting document not found on this member.");
@@ -87,60 +96,59 @@ export async function createStatusRequest(db: Db, ctx: AuthContext, input: z.inp
       field: "status",
       oldValue: m.status,
       newValue: to,
-      note: `${REQUEST_TYPES[v.type].label} requested${v.otherChurch ? ` (${v.otherChurch})` : ""}`,
+      note: `${REQUEST_TYPES[v.type].label}${v.otherChurch ? ` (${v.otherChurch})` : ""}`,
     });
-    return req;
+    await applyStatusChange(tx, ctx, req.id);
+    return tx.statusChangeRequest.findUniqueOrThrow({ where: { id: req.id } });
   });
 }
 
+/** Apply a status change: set the status, record it in the member's history, move a transfer on. */
+async function applyStatusChange(tx: Prisma.TransactionClient, ctx: AuthContext, requestId: string) {
+  const req = await tx.statusChangeRequest.findUniqueOrThrow({ where: { id: requestId }, include: { member: true, transfer: true } });
+  const audit = new AuditWriter(tx, actorFrom(ctx), "WORKFLOW");
+  if (req.state === "PENDING") {
+    await tx.statusChangeRequest.update({ where: { id: req.id }, data: { state: "APPROVED", decidedById: ctx.userId, decidedAt: new Date() } });
+  }
+  // Status may have changed since the request was made; record what it actually was.
+  const before = req.member.status;
+  await audit.logChanges("Member", req.memberId, { status: before }, { status: req.toStatus }, { memberId: req.memberId, note: `${REQUEST_TYPES[req.type].label}: ${req.reason}`.slice(0, 300) });
+  await tx.member.update({ where: { id: req.memberId }, data: { status: req.toStatus, version: { increment: 1 } } });
+  const typeInfo = REQUEST_TYPES[req.type];
+  await tx.membershipEvent.create({
+    data: {
+      memberId: req.memberId,
+      type: typeInfo.event,
+      occurredOn: req.effectiveDate,
+      title:
+        req.type === "TRANSFER_OUT" ? `Transferred out to ${req.transfer?.otherChurch}`
+        : req.type === "TRANSFER_IN" ? `Transferred in from ${req.transfer?.otherChurch}`
+        : req.type === "DEATH" ? "Death recorded"
+        : `Status: ${before ? STATUS_META[before].label : "Not recorded"} → ${STATUS_META[req.toStatus].label}`,
+      detail: req.reason,
+      fromStatus: before,
+      toStatus: req.toStatus,
+      requestId: req.id,
+      approvedById: ctx.userId,
+      createdById: req.requestedById,
+    },
+  });
+  if (req.transfer) await tx.transfer.update({ where: { id: req.transfer.id }, data: { stage: "BOARD_APPROVED", boardApprovedAt: new Date() } });
+  await refreshCompleteness(tx, req.memberId);
+}
+
 /**
- * Approve or reject. Approvers (Pastor / board, by default) cannot decide
- * their own requests. Approval applies the status and records the change in
- * the member's history with the approver.
+ * Requests made before status changes stopped needing approval may still be
+ * open. Applying one sets the status as if it had just been recorded.
  */
-export async function decideStatusRequest(db: Db, ctx: AuthContext, requestId: string, approve: boolean, note?: string) {
-  assertCan(ctx, "status_request", "approve");
+export async function applyPendingStatusRequest(db: Db, ctx: AuthContext, requestId: string) {
+  if (!canChangeStatus(ctx)) throw new ForbiddenError("You can’t change membership status.");
   return db.$transaction(async (tx) => {
-    const req = await tx.statusChangeRequest.findUnique({ where: { id: requestId }, include: { member: { include: { ministries: { select: { ministryId: true } } } }, transfer: true } });
+    const req = await tx.statusChangeRequest.findUnique({ where: { id: requestId }, include: { member: { include: { ministries: { select: { ministryId: true } } } } } });
     if (!req) throw new NotFoundError("Request not found.");
-    if (req.state !== "PENDING") throw new ConflictError("This request was already decided.");
-    if (!canOnMember(ctx, "status_request", "approve", req.member)) throw new ForbiddenError();
-    if (req.requestedById === ctx.userId) throw new ForbiddenError("Someone else must approve a request you made.");
-    if (!approve && !note?.trim()) throw new ValidationError("Give a reason for rejecting.");
-
-    const audit = new AuditWriter(tx, actorFrom(ctx), "WORKFLOW");
-    await tx.statusChangeRequest.update({ where: { id: req.id }, data: { state: approve ? "APPROVED" : "REJECTED", decidedById: ctx.userId, decidedAt: new Date(), decisionNote: note?.trim() || null } });
-    await audit.log({ action: approve ? "APPROVE" : "REJECT", entity: "StatusChangeRequest", entityId: req.id, memberId: req.memberId, note: note?.trim() || null });
-    if (!approve) {
-      if (req.transfer) await tx.transfer.update({ where: { id: req.transfer.id }, data: { stage: "CANCELLED" } });
-      return { state: "REJECTED" as const };
-    }
-
-    // Status may have changed since the request was made; record what it actually was.
-    const before = req.member.status;
-    await audit.logChanges("Member", req.memberId, { status: before }, { status: req.toStatus }, { memberId: req.memberId, note: `Approved ${REQUEST_TYPES[req.type].label.toLowerCase()}` });
-    await tx.member.update({ where: { id: req.memberId }, data: { status: req.toStatus, version: { increment: 1 } } });
-    const typeInfo = REQUEST_TYPES[req.type];
-    await tx.membershipEvent.create({
-      data: {
-        memberId: req.memberId,
-        type: typeInfo.event,
-        occurredOn: req.effectiveDate,
-        title:
-          req.type === "TRANSFER_OUT" ? `Transferred out to ${req.transfer?.otherChurch}`
-          : req.type === "TRANSFER_IN" ? `Transferred in from ${req.transfer?.otherChurch}`
-          : req.type === "DEATH" ? "Death recorded"
-          : `Status: ${before ? STATUS_META[before].label : "Not recorded"} → ${STATUS_META[req.toStatus].label}`,
-        detail: req.reason,
-        fromStatus: before,
-        toStatus: req.toStatus,
-        requestId: req.id,
-        approvedById: ctx.userId,
-        createdById: req.requestedById,
-      },
-    });
-    if (req.transfer) await tx.transfer.update({ where: { id: req.transfer.id }, data: { stage: "BOARD_APPROVED", boardApprovedAt: new Date() } });
-    await refreshCompleteness(tx, req.memberId);
+    if (req.state !== "PENDING") throw new ConflictError("This request was already finished.");
+    if (!canOnMember(ctx, "status_request", "create", req.member)) throw new ForbiddenError();
+    await applyStatusChange(tx, ctx, req.id);
     return { state: "APPROVED" as const };
   });
 }
@@ -149,7 +157,7 @@ export async function cancelStatusRequest(db: Db, ctx: AuthContext, requestId: s
   const req = await db.statusChangeRequest.findUnique({ where: { id: requestId }, include: { transfer: true } });
   if (!req) throw new NotFoundError();
   if (req.state !== "PENDING") throw new ConflictError("This request was already decided.");
-  if (req.requestedById !== ctx.userId && !can(ctx, "status_request", "approve")) throw new ForbiddenError();
+  if (req.requestedById !== ctx.userId && !canChangeStatus(ctx)) throw new ForbiddenError();
   await db.$transaction(async (tx) => {
     await tx.statusChangeRequest.update({ where: { id: req.id }, data: { state: "CANCELLED", decidedById: ctx.userId, decidedAt: new Date() } });
     if (req.transfer) await tx.transfer.update({ where: { id: req.transfer.id }, data: { stage: "CANCELLED" } });
@@ -163,7 +171,7 @@ const STAGE_FIELD: Partial<Record<TransferStage, "letterSentAt" | "letterReceive
   COMPLETED: "completedAt",
 };
 
-/** Track transfer letters: sent (out) / received (in), then completed after board approval. */
+/** Track transfer letters: sent (out) / received (in), then completed. */
 export async function advanceTransfer(db: Db, ctx: AuthContext, transferId: string, stage: "LETTER_SENT" | "LETTER_RECEIVED" | "COMPLETED", notes?: string) {
   assertCan(ctx, "transfer", "update");
   const t = await db.transfer.findUnique({ where: { id: transferId } });
@@ -171,11 +179,12 @@ export async function advanceTransfer(db: Db, ctx: AuthContext, transferId: stri
   if (t.stage === "CANCELLED" || t.stage === "COMPLETED") throw new ValidationError("This transfer is closed.");
   if (stage === "LETTER_SENT" && t.direction !== "OUT") throw new ValidationError("Letters are sent for transfers out.");
   if (stage === "LETTER_RECEIVED" && t.direction !== "IN") throw new ValidationError("Letters are received for transfers in.");
-  if (stage === "COMPLETED" && t.stage !== "BOARD_APPROVED") throw new ValidationError("The board must approve the transfer first.");
+  // BOARD_APPROVED now means "status applied" (it is set when the transfer is recorded).
+  if (stage === "COMPLETED" && t.stage !== "BOARD_APPROVED") throw new ValidationError("Apply the status change for this transfer first.");
   if (stage === "COMPLETED" && !t.letterSentAt && !t.letterReceivedAt) throw new ValidationError("Record the transfer letter first.");
   const field = STAGE_FIELD[stage]!;
   await db.$transaction(async (tx) => {
-    // Letter stages are recorded without moving back past board approval.
+    // Letter stages are recorded without moving back past the applied status.
     const nextStage = stage === "COMPLETED" ? "COMPLETED" : t.stage === "BOARD_APPROVED" ? "BOARD_APPROVED" : stage;
     await tx.transfer.update({ where: { id: t.id }, data: { stage: nextStage, [field]: new Date(), notes: notes ?? t.notes } });
     await new AuditWriter(tx, actorFrom(ctx), "WORKFLOW").log({ action: "UPDATE", entity: "Transfer", entityId: t.id, memberId: t.memberId, field: "stage", oldValue: t.stage, newValue: stage, note: notes ?? null });

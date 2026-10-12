@@ -1,11 +1,11 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import type { Db } from "@/server/db";
-import { ForbiddenError, ValidationError } from "@/server/errors";
+import { ForbiddenError } from "@/server/errors";
 import { dashboardStats } from "@/server/dashboard/stats";
-import { activateMembers, dormantCounts, listDormant, requestReactivation } from "@/server/members/dormant";
+import { activateMembers, dormantCounts, listDormant } from "@/server/members/dormant";
 import { createMember, updateMember } from "@/server/members/service";
 import { buildReport, parseReportParams } from "@/server/reports/reports";
-import { createStatusRequest, decideStatusRequest } from "@/server/workflows/status";
+import { createStatusRequest } from "@/server/workflows/status";
 import { testDb, userWith } from "./helpers";
 
 let db: Db;
@@ -56,31 +56,25 @@ describe("active register and dormant members", () => {
     expect(await db.auditLog.count({ where: { memberId: a.id, field: "status" } })).toBe(1);
   });
 
-  it("members with a dormant status come back only through an approved request", async () => {
+  it("members with a dormant status return directly; discipline becomes a restoration", async () => {
     const m = await createMember(db, clerk, { lastName: `Back${tag}`, firstName: "Transferred" });
     await updateMember(db, clerk, m.id, { status: "SELF_TRANSFERRED" });
-    expect(await activateMembers(db, clerk, [m.id], "ACTIVE")).toEqual({ done: 0, skipped: 1 });
     expect((await listDormant(db, clerk, { tab: "self", q: `Back${tag}` })).rows).toHaveLength(1);
-
-    await expect(requestReactivation(db, clerk, { memberId: m.id, toStatus: "ACTIVE", reason: "x", effectiveDate: today })).rejects.toThrow();
-    const req = await requestReactivation(db, clerk, { memberId: m.id, toStatus: "ACTIVE", reason: "Back and attending every Sabbath", effectiveDate: today });
-    const listed = await listDormant(db, clerk, { tab: "self", q: `Back${tag}` });
-    expect(listed.rows[0]!.pendingTo).toBe("ACTIVE");
-    expect(await inStatusReport(m.memberId)).toBe(false);
-    await decideStatusRequest(db, pastor, req.id, true);
+    expect(await activateMembers(db, clerk, [m.id], "ACTIVE")).toEqual({ done: 1, skipped: 0 });
+    expect((await listDormant(db, clerk, { tab: "self", q: `Back${tag}` })).rows).toHaveLength(0);
     expect(await inStatusReport(m.memberId)).toBe(true);
+
+    const d = await createMember(db, clerk, { lastName: `Disc${tag}`, firstName: "Member", status: "ACTIVE" });
+    await createStatusRequest(db, pastor, { memberId: d.id, type: "DISCIPLINE", reason: "Board decision of the month", effectiveDate: today });
+    expect(await activateMembers(db, pastor, [d.id], "ACTIVE")).toEqual({ done: 1, skipped: 0 });
+    const last = await db.membershipEvent.findFirstOrThrow({ where: { memberId: d.id }, orderBy: { createdAt: "desc" } });
+    expect(last).toMatchObject({ type: "RESTORATION", fromStatus: "UNDER_DISCIPLINE", toStatus: "ACTIVE" });
   });
 
-  it("restores members under discipline, never reactivates the deceased, and needs status access", async () => {
-    const d = await createMember(db, clerk, { lastName: `Disc${tag}`, firstName: "Member", status: "ACTIVE" });
-    const r = await createStatusRequest(db, clerk, { memberId: d.id, type: "DISCIPLINE", reason: "Board decision of the month", effectiveDate: today });
-    await decideStatusRequest(db, pastor, r.id, true);
-    const back = await requestReactivation(db, clerk, { memberId: d.id, toStatus: "ACTIVE", reason: "Restored by board vote", effectiveDate: today });
-    expect(back.type).toBe("RESTORATION");
-
+  it("never reactivates the deceased, and needs status access", async () => {
     const late = await createMember(db, clerk, { lastName: `Late${tag}`, firstName: "Member" });
     await updateMember(db, clerk, late.id, { status: "DECEASED" });
-    await expect(requestReactivation(db, clerk, { memberId: late.id, toStatus: "ACTIVE", reason: "Should not work", effectiveDate: today })).rejects.toBeInstanceOf(ValidationError);
+    expect(await activateMembers(db, clerk, [late.id], "ACTIVE")).toEqual({ done: 0, skipped: 1 });
     expect((await listDormant(db, clerk, { tab: "all", q: `Late${tag}` })).rows).toHaveLength(0);
     expect((await listDormant(db, clerk, { tab: "deceased", q: `Late${tag}` })).rows).toHaveLength(1);
 
