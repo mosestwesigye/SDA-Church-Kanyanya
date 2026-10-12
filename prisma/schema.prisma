@@ -31,6 +31,7 @@ enum MembershipStatus {
   UNDER_DISCIPLINE
   DECEASED
   LEFT_THE_FAITH
+  DORMANT
 }
 
 enum MaritalStatus {

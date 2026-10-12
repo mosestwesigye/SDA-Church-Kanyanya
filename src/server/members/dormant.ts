@@ -14,8 +14,9 @@ import { updateMember } from "./service";
  * through them here; once Active or Irregular they count again.
  */
 export const DORMANT_TABS = [
-  { key: "all", label: "All dormant", statuses: ["NONE", "SELF_TRANSFERRED", "UNDER_DISCIPLINE", "LEFT_THE_FAITH"] },
+  { key: "all", label: "All dormant", statuses: ["NONE", "DORMANT", "SELF_TRANSFERRED", "UNDER_DISCIPLINE", "LEFT_THE_FAITH"] },
   { key: "none", label: "Not recorded", statuses: ["NONE"] },
+  { key: "dormant", label: "Dormant", statuses: ["DORMANT"] },
   { key: "self", label: "Self transferred", statuses: ["SELF_TRANSFERRED"] },
   { key: "discipline", label: "Under discipline", statuses: ["UNDER_DISCIPLINE"] },
   { key: "left", label: "Left the faith", statuses: ["LEFT_THE_FAITH"] },

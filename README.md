@@ -90,6 +90,7 @@ Members' self-service corrections are still reviewed by the clerk (below).
 
 On the Church Clerk's guidance, the dashboard and reports count only **Active** and **Irregular** members (the active register). Everyone else is listed under **Dormant members**:
 - *Not recorded* (no status yet): the clerk marks them Active or Irregular directly, one by one or in bulk.
+- *Dormant*: members recorded as no longer attending (a status of its own, chosen under Change status → Other status change or on the member form).
 - *Self transferred*, *Under discipline*, *Left the faith*: the clerk marks them Active or Irregular directly (marking a member under discipline Active records a restoration).
 - *Deceased*: kept for the record only.
 

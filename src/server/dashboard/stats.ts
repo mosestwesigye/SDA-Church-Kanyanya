@@ -7,7 +7,7 @@ import { ACTIVE_STATUSES, activeWhere, dormantWhere } from "../members/register"
  * Stacked-bar order for statuses, chosen with the dataviz palette validator so
  * no two adjacent segments are hard to tell apart (incl. colour-blind vision).
  */
-export const STATUS_BAR_ORDER = ["ACTIVE", "LEFT_THE_FAITH", "IRREGULAR", "SELF_TRANSFERRED", "UNDER_DISCIPLINE", "NONE", "DECEASED"] as const;
+export const STATUS_BAR_ORDER = ["ACTIVE", "LEFT_THE_FAITH", "IRREGULAR", "SELF_TRANSFERRED", "UNDER_DISCIPLINE", "DORMANT", "NONE", "DECEASED"] as const;
 
 export const AGE_BANDS = [
   { key: "0–17", min: 0, max: 17 },

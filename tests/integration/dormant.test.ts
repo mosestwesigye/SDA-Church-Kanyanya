@@ -71,6 +71,16 @@ describe("active register and dormant members", () => {
     expect(last).toMatchObject({ type: "RESTORATION", fromStatus: "UNDER_DISCIPLINE", toStatus: "ACTIVE" });
   });
 
+  it("members marked Dormant leave the active register and can return", async () => {
+    const m = await createMember(db, clerk, { lastName: `Sleep${tag}`, firstName: "Member", status: "ACTIVE" });
+    await createStatusRequest(db, clerk, { memberId: m.id, type: "STATUS_UPDATE", toStatus: "DORMANT", reason: "Not attended for two years", effectiveDate: today });
+    expect(await inStatusReport(m.memberId)).toBe(false);
+    expect((await listDormant(db, clerk, { tab: "dormant", q: `Sleep${tag}` })).rows).toHaveLength(1);
+    expect((await listDormant(db, clerk, { tab: "all", q: `Sleep${tag}` })).rows).toHaveLength(1);
+    expect(await activateMembers(db, clerk, [m.id], "IRREGULAR")).toEqual({ done: 1, skipped: 0 });
+    expect(await inStatusReport(m.memberId)).toBe(true);
+  });
+
   it("never reactivates the deceased, and needs status access", async () => {
     const late = await createMember(db, clerk, { lastName: `Late${tag}`, firstName: "Member" });
     await updateMember(db, clerk, late.id, { status: "DECEASED" });

@@ -22,7 +22,7 @@ export const requestInput = z
   .object({
     memberId: z.string().min(1),
     type: z.enum(["TRANSFER_IN", "TRANSFER_OUT", "DEATH", "DISCIPLINE", "RESTORATION", "STATUS_UPDATE"]),
-    toStatus: z.enum(["ACTIVE", "IRREGULAR", "SELF_TRANSFERRED", "UNDER_DISCIPLINE", "DECEASED", "LEFT_THE_FAITH"]).optional(),
+    toStatus: z.enum(["ACTIVE", "IRREGULAR", "SELF_TRANSFERRED", "UNDER_DISCIPLINE", "DECEASED", "LEFT_THE_FAITH", "DORMANT"]).optional(),
     reason: z.string().trim().min(5, "Give the reason (at least a few words)").max(1000),
     effectiveDate: z.iso.date(),
     documentId: z.string().optional(),

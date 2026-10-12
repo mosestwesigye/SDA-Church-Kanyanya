@@ -15,6 +15,7 @@ export const metadata: Metadata = { title: "Dormant members" };
 const TAB_NOTES: Record<string, string> = {
   all: "Everyone not Active or Irregular, except the deceased.",
   none: "No status recorded yet. Select several to update them together.",
+  dormant: "Members recorded as dormant (not attending). Mark them Active or Irregular when they return.",
   self: "Members recorded as self transferred. Mark them Active or Irregular when they return.",
   discipline: "Members under church discipline. Marking one Active records a restoration.",
   left: "Members recorded as having left the faith. Mark them Active or Irregular when they return.",
