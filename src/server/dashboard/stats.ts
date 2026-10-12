@@ -1,6 +1,7 @@
 import type { Prisma } from "@/generated/prisma/client";
 import { can, memberScopeWhere, type AuthContext } from "../authz/policy";
 import type { DbOrTx } from "../db";
+import { ACTIVE_STATUSES, activeWhere, dormantWhere } from "../members/register";
 
 /**
  * Stacked-bar order for statuses, chosen with the dataviz palette validator so
@@ -17,8 +18,11 @@ export const AGE_BANDS = [
 
 type Count = { key: string | null; n: number };
 
+/** Order of the two statuses on the active register. */
+export const ACTIVE_BAR_ORDER = ACTIVE_STATUSES;
+
 /**
- * Dashboard figures, scoped to what the caller may see. Profile-level
+ * Dashboard figures for the active register (Active and Irregular members), scoped to what the caller may see. Profile-level
  * breakdowns (status, gender, age, zone) need member.profile:read.
  */
 export async function dashboardStats(db: DbOrTx, ctx: AuthContext, opts: { zoneId?: string } = {}) {
@@ -26,6 +30,9 @@ export async function dashboardStats(db: DbOrTx, ctx: AuthContext, opts: { zoneI
     AND: [memberScopeWhere(ctx) as Prisma.MemberWhereInput, { deletedAt: null, mergedIntoId: null, purgedAt: null }, ...(opts.zoneId ? [{ zoneId: opts.zoneId }] : [])],
   };
   const profile = can(ctx, "member.profile", "read");
+  // Status is a profile field: without it the register can't be split, so show the caller's whole scope.
+  const scope = [...(base.AND as Prisma.MemberWhereInput[])];
+  if (profile) (base.AND as Prisma.MemberWhereInput[]).push(activeWhere);
 
   const [total, complete, nameOnly, byStatus, byGender, byZone, byMinistry, dobRows, zones, ministryCount] = await Promise.all([
     db.member.count({ where: base }),
@@ -69,7 +76,8 @@ export async function dashboardStats(db: DbOrTx, ctx: AuthContext, opts: { zoneI
     complete,
     nameOnly,
     profile,
-    status: STATUS_BAR_ORDER.map((s) => ({ key: s, n: byStatus.find((x) => (s === "NONE" ? x.status === null : x.status === s))?._count ?? 0 })),
+    status: ACTIVE_BAR_ORDER.map((s) => ({ key: s as string, n: byStatus.find((x) => x.status === s)?._count ?? 0 })),
+    dormant: profile ? await db.member.count({ where: { AND: [...scope, dormantWhere] } }) : null,
     gender: [
       { key: "FEMALE", n: byGender.find((g) => g.gender === "FEMALE")?._count ?? 0 },
       { key: "MALE", n: byGender.find((g) => g.gender === "MALE")?._count ?? 0 },
@@ -114,7 +122,8 @@ export async function upcomingBirthdays(db: DbOrTx, ctx: AuthContext, days = 7, 
     where: {
       AND: [
         memberScopeWhere(ctx) as Prisma.MemberWhereInput,
-        { dobPrecision: "FULL", dobDate: { not: null }, deletedAt: null, mergedIntoId: null, purgedAt: null, OR: [{ status: null }, { status: { not: "DECEASED" } }] },
+        { dobPrecision: "FULL", dobDate: { not: null }, deletedAt: null, mergedIntoId: null, purgedAt: null },
+        activeWhere,
       ],
     },
     select: { id: true, lastName: true, firstName: true, dobDate: true, ministries: { take: 1, select: { ministry: { select: { label: true } } } } },

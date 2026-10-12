@@ -30,7 +30,7 @@ describe("birthdays", () => {
   it("lists only full-DOB, living members", async () => {
     const soon = new Date(Date.now() + 2 * 86400_000);
     const iso = `1990-${String(soon.getUTCMonth() + 1).padStart(2, "0")}-${String(soon.getUTCDate()).padStart(2, "0")}`;
-    const m = await createMember(db, clerk, { lastName: "Bday", firstName: "Soon", dobPrecision: "FULL", dobDate: iso });
+    const m = await createMember(db, clerk, { lastName: "Bday", firstName: "Soon", dobPrecision: "FULL", dobDate: iso, status: "ACTIVE" });
     await createMember(db, clerk, { lastName: "Bday", firstName: "YearOnly", dobPrecision: "YEAR", dobYear: 1990 });
     const list = await upcomingBirthdays(db, clerk, 7, 50);
     expect(list.some((b) => b.id === m.id)).toBe(true);
@@ -43,13 +43,13 @@ describe("birthdays", () => {
 describe("dashboard stats", () => {
   it("are scoped: a ministry head sees only their ministries' members, without profile breakdowns leaking", async () => {
     const role = await listId(db, "MINISTRY_ROLE", "Member");
-    const m = await createMember(db, clerk, { lastName: "Dash", firstName: "Pathfinder", gender: "FEMALE", dobPrecision: "YEAR", dobYear: 2012 });
+    const m = await createMember(db, clerk, { lastName: "Dash", firstName: "Pathfinder", gender: "FEMALE", dobPrecision: "YEAR", dobYear: 2012, status: "ACTIVE" });
     await addMinistry(db, clerk, m.id, await listId(db, "MINISTRY", "Pathfinders"), role);
     const head = await userWith(db, ["MINISTRY_HEAD"], { ministryLabels: ["Pathfinders"] });
     const s = await dashboardStats(db, head);
     const all = await dashboardStats(db, clerk);
     expect(s.total).toBeLessThan(all.total);
-    expect(s.total).toBe(await db.member.count({ where: { deletedAt: null, mergedIntoId: null, purgedAt: null, ministries: { some: { ministry: { label: "Pathfinders" } } } } }));
+    expect(s.total).toBe(await db.member.count({ where: { deletedAt: null, mergedIntoId: null, purgedAt: null, status: { in: ["ACTIVE", "IRREGULAR"] }, ministries: { some: { ministry: { label: "Pathfinders" } } } } }));
     expect(s.ages.find((a) => a.key === "0–17")!.n).toBeGreaterThanOrEqual(1);
     expect(all.status.reduce((n, x) => n + x.n, 0)).toBe(all.total);
     expect(all.gender.reduce((n, x) => n + x.n, 0)).toBe(all.total);

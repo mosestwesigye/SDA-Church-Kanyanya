@@ -46,7 +46,7 @@ describe("report permissions", () => {
   });
 
   it("elders can preview but not download (export is logged and needs export:run)", async () => {
-    await createMember(db, clerk, { lastName: "Rep", firstName: "Elderview" });
+    await createMember(db, clerk, { lastName: "Rep", firstName: "Elderview", status: "ACTIVE" });
     const elder = await userWith(db, ["ELDER"]);
     const r = await buildReport(db, elder, "status", parseReportParams("status", {}));
     expect(r.rowCount).toBeGreaterThan(0);
@@ -54,9 +54,9 @@ describe("report permissions", () => {
   });
 
   it("a ministry head only gets their ministry's members, and only their own roster", async () => {
-    const m = await createMember(db, clerk, { lastName: "Rep", firstName: "Helper", phone: "0772 123456" });
+    const m = await createMember(db, clerk, { lastName: "Rep", firstName: "Helper", phone: "0772 123456", status: "ACTIVE" });
     await addMinistry(db, clerk, m.id, await listId(db, "MINISTRY", "Welfare"), await listId(db, "MINISTRY_ROLE", "Member"));
-    const outsider = await createMember(db, clerk, { lastName: "Rep", firstName: "Outsider" });
+    const outsider = await createMember(db, clerk, { lastName: "Rep", firstName: "Outsider", status: "ACTIVE" });
     const head = await userWith(db, ["MINISTRY_HEAD"], { ministryLabels: ["Welfare"] });
 
     const zones = await buildReport(db, head, "zones", parseReportParams("zones", {}));
@@ -125,8 +125,8 @@ describe("quarterly report", () => {
 
 describe("birthday report", () => {
   it("lists full-DOB members of the month only", async () => {
-    const full = await createMember(db, clerk, { lastName: "Bday", firstName: "March", dobPrecision: "FULL", dobDate: "1985-03-14" });
-    const yearOnly = await createMember(db, clerk, { lastName: "Bday", firstName: "YearOnlyMarch", dobPrecision: "YEAR", dobYear: 1985 });
+    const full = await createMember(db, clerk, { lastName: "Bday", firstName: "March", dobPrecision: "FULL", dobDate: "1985-03-14", status: "ACTIVE" });
+    const yearOnly = await createMember(db, clerk, { lastName: "Bday", firstName: "YearOnlyMarch", dobPrecision: "YEAR", dobYear: 1985, status: "ACTIVE" });
     const r = await buildReport(db, clerk, "birthdays", { month: 3 });
     const rows = r.sections[0]!.table!.rows;
     expect(rows.find((x) => x.memberId === full.memberId)).toMatchObject({ day: 14 });
@@ -138,7 +138,7 @@ describe("birthday report", () => {
 describe("more reports", () => {
   it("age groups place members by age and leave out the deceased", async () => {
     const y = now.getUTCFullYear();
-    const kid = await createMember(db, clerk, { lastName: "Age", firstName: "Pathfinder", dobPrecision: "YEAR", dobYear: y - 12 });
+    const kid = await createMember(db, clerk, { lastName: "Age", firstName: "Pathfinder", dobPrecision: "YEAR", dobYear: y - 12, status: "IRREGULAR" });
     const late = await createMember(db, clerk, { lastName: "Age", firstName: "Late", dobPrecision: "YEAR", dobYear: y - 12 });
     await updateMember(db, clerk, late.id, { status: "DECEASED" });
     const r = await buildReport(db, clerk, "age-groups", parseReportParams("age-groups", { group: "pathfinders" }));
@@ -161,7 +161,7 @@ describe("more reports", () => {
   });
 
   it("records needing attention list what is missing, least complete first", async () => {
-    const m = await createMember(db, clerk, { lastName: "Quality", firstName: "Sparse" });
+    const m = await createMember(db, clerk, { lastName: "Quality", firstName: "Sparse", status: "ACTIVE" });
     const r = await buildReport(db, clerk, "data-quality", parseReportParams("data-quality", { below: "50" }));
     const rows = r.sections.find((s) => s.table)!.table!.rows;
     const row = rows.find((x) => x.memberId === m.memberId)!;
@@ -187,7 +187,7 @@ describe("more reports", () => {
 
 describe("rendering and logging", () => {
   it("renders PDF and Excel safely and logs the download", async () => {
-    await createMember(db, clerk, { lastName: "=HYPERLINK(\"x\")", firstName: "Ŋanda → Test" });
+    await createMember(db, clerk, { lastName: "=HYPERLINK(\"x\")", firstName: "Ŋanda → Test", status: "ACTIVE" });
     const r = await buildReport(db, clerk, "status", parseReportParams("status", {}));
     const pdf = await reportPdf(r);
     expect(Buffer.from(pdf.slice(0, 5)).toString()).toBe("%PDF-");

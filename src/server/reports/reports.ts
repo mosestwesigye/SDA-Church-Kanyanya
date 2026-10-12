@@ -5,11 +5,12 @@ import { formatDob } from "@/lib/dob";
 import { NOT_RECORDED, STATUS_META, type StatusKey } from "@/lib/labels";
 import type { Resource } from "../authz/catalog";
 import { assertCan, can, memberScopeWhere, type AuthContext } from "../authz/policy";
-import { dashboardStats, STATUS_BAR_ORDER } from "../dashboard/stats";
+import { dashboardStats } from "../dashboard/stats";
 import type { DbOrTx } from "../db";
 import { ForbiddenError } from "../errors";
 import { KINDS, relationLabel } from "../households/service";
 import { MEETING_TYPES } from "../minutes/service";
+import { ACTIVE_STATUSES, activeWhere, isActiveStatus } from "../members/register";
 import { directoryQuerySchema, listMembers, type DirectoryRow } from "../members/directory";
 import { ministryRoster } from "../ministries/service";
 import type { Table } from "../exports/tabular";
@@ -24,7 +25,7 @@ export const REPORTS: Record<ReportKey, { title: string; description: string; ne
   quarterly: { title: "Clerk’s quarterly report", description: "Membership at the start and end of a quarter, gains and losses by type, and the register breakdown.", needsProfile: true },
   overview: { title: "Membership overview", description: "The register at a glance: status, gender, age, zones and ministries, with percentages.", needsProfile: true },
   movements: { title: "Membership changes", description: "Baptisms, professions of faith, transfers, deaths and other status changes between two dates.", needsProfile: true },
-  status: { title: "Membership by status", description: "Counts per membership status with the member list under each.", needsProfile: true },
+  status: { title: "Active & irregular members", description: "The active register: Active and Irregular members, counted and listed under each status.", needsProfile: true },
   "age-groups": { title: "Age groups", description: "Members by department age group — Adventurers, Pathfinders, Youth, Adults and Senior citizens.", needsProfile: true },
   "ministry-roster": { title: "Ministry roster", description: "Members of one ministry with their roles and contacts.", needsProfile: false },
   zones: { title: "Zone lists", description: "Members grouped by zone, for zone leaders and visitation.", needsProfile: true },
@@ -37,9 +38,11 @@ export const REPORTS: Record<ReportKey, { title: string; description: string; ne
 export const REPORT_KEYS = Object.keys(REPORTS) as ReportKey[];
 export const isReportKey = (k: string): k is ReportKey => k in REPORTS;
 
-/** Statuses that count as "on the church books" for the quarterly totals. Not recorded counts as on the books. */
-const ON_BOOKS: (MembershipStatus | null)[] = ["ACTIVE", "IRREGULAR", "UNDER_DISCIPLINE", null];
-const onBooks = (s: MembershipStatus | null) => ON_BOOKS.includes(s);
+/** Reports count the active register only: Active and Irregular members (Church Clerk's rule). */
+const onBooks = (s: MembershipStatus | null) => isActiveStatus(s);
+
+/** Recording a status for the first time is a record update, not a membership gain or loss. */
+const realMovement = (e: { fromStatus: MembershipStatus | null; toStatus: MembershipStatus | null }) => (e.fromStatus === null ? 0 : movement(e));
 
 export type ReportSection = {
   heading: string;
@@ -133,7 +136,9 @@ function toTable(title: string, cols: Col[], rows: Row[], extra: Col[] = []): Ta
 }
 
 async function members(db: DbOrTx, ctx: AuthContext, q: Partial<z.input<typeof directoryQuerySchema>>): Promise<DirectoryRow[]> {
-  const { rows } = await listMembers(db, ctx, directoryQuerySchema.parse(q), { take: REPORT_MAX_ROWS });
+  // Reports cover the active register unless a status filter is given.
+  const withStatus = q.status ? q : { ...q, status: can(ctx, "member.profile", "read") ? ACTIVE_STATUSES.join(",") : undefined };
+  const { rows } = await listMembers(db, ctx, directoryQuerySchema.parse(withStatus), { take: REPORT_MAX_ROWS });
   return rows;
 }
 
@@ -191,9 +196,9 @@ async function quarterly(db: DbOrTx, ctx: AuthContext, p: ReportParams["quarterl
     }),
     dashboardStats(db, ctx),
   ]);
-  const gains = within.filter((e) => movement(e) > 0);
-  const losses = within.filter((e) => movement(e) < 0);
-  // Whatever the status changes don't explain is records entered (or removed) in the quarter.
+  const gains = within.filter((e) => realMovement(e) > 0);
+  const losses = within.filter((e) => realMovement(e) < 0);
+  // Whatever the status changes don't explain is records entered (or given a status) in the quarter.
   const added = closing - opening - gains.length + losses.length;
 
   const tally = (list: typeof within) => {
@@ -207,7 +212,7 @@ async function quarterly(db: DbOrTx, ctx: AuthContext, p: ReportParams["quarterl
     date: fmtDate(e.occurredOn!),
     type: EVENT_LABELS[e.type] ?? e.type,
     change: `${e.fromStatus ? statusLabel(e.fromStatus) : NOT_RECORDED.label} → ${statusLabel(e.toStatus!)}`,
-    direction: movement(e) > 0 ? "Gain" : movement(e) < 0 ? "Loss" : "—",
+    direction: realMovement(e) > 0 ? "Gain" : realMovement(e) < 0 ? "Loss" : e.fromStatus === null ? "Status recorded" : "—",
   }));
   const extra: Col[] = [
     { key: "date", label: "Date", width: 13, group: "member", get: (m) => m.date },
@@ -224,7 +229,7 @@ async function quarterly(db: DbOrTx, ctx: AuthContext, p: ReportParams["quarterl
     sections: [
       {
         heading: "Membership",
-        note: "“On the books” means Active, Irregular, Under discipline or status not recorded. Figures are derived from approved status changes; records entered in the quarter count from the day they were added.",
+        note: "Membership counts Active and Irregular members only. Gains and losses come from approved status changes; records added, or given a status for the first time, in the quarter are counted separately.",
         summary: [
           { label: "Membership at start of quarter", value: opening },
           { label: "Gains", value: gains.length },
@@ -254,7 +259,7 @@ async function quarterly(db: DbOrTx, ctx: AuthContext, p: ReportParams["quarterl
 }
 
 async function byStatus(db: DbOrTx, ctx: AuthContext, p: ReportParams["status"], omitted: Set<string>) {
-  const statuses = p.status ? [p.status] : [...STATUS_BAR_ORDER];
+  const statuses: string[] = p.status && isActiveStatus(p.status) ? [p.status] : [...ACTIVE_STATUSES];
   const rows = await members(db, ctx, { status: statuses.join(","), zone: p.zone });
   const cols = columnsFor(ctx, ["memberId", "name", "zone", "phone", "ministry"], omitted);
   const zoneLabel = p.zone ? ((await db.listItem.findUnique({ where: { id: p.zone } }))?.label ?? "Unknown zone") : null;
@@ -274,10 +279,12 @@ async function roster(db: DbOrTx, ctx: AuthContext, p: ReportParams["ministry-ro
   if (!p.ministry) return { title: REPORTS["ministry-roster"].title, subtitle: "Choose a ministry", rowCount: 0, sections: [] };
   const { ministry, roster } = await ministryRoster(db, ctx, p.ministry);
   const cols = columnsFor(ctx, ["memberId", "name", "phone", "zone", "status"], omitted);
-  const rows = roster.map((r) => ({ ...r.member, role: r.role }));
+  // Active register only (members whose status the viewer can't see are kept).
+  const listed = roster.filter((r) => !("status" in r.member) || isActiveStatus((r.member as { status?: MembershipStatus | null }).status));
+  const rows = listed.map((r) => ({ ...r.member, role: r.role }));
   const role: Col = { key: "role", label: "Role", width: 16, group: "member", get: (m) => m.role };
   const roles = new Map<string, number>();
-  for (const r of roster) roles.set(r.role, (roles.get(r.role) ?? 0) + 1);
+  for (const r of listed) roles.set(r.role, (roles.get(r.role) ?? 0) + 1);
   return {
     title: `${ministry.label} roster`,
     subtitle: `${roster.length} member${roster.length === 1 ? "" : "s"}`,
@@ -344,10 +351,12 @@ function ageOf(m: Row, at = now()): number | null {
   return m.dobPrecision === "YEAR" && m.dobYear ? at.getUTCFullYear() - m.dobYear : null;
 }
 
-const liveWhere = (ctx: AuthContext, zone?: string): Prisma.MemberWhereInput => ({
+/** Members in the caller's scope; `active` limits it to the active register. */
+const liveWhere = (ctx: AuthContext, zone?: string, active = true): Prisma.MemberWhereInput => ({
   AND: [
     memberScopeWhere(ctx) as Prisma.MemberWhereInput,
     { deletedAt: null, mergedIntoId: null, purgedAt: null },
+    ...(active ? [activeWhere] : []),
     ...(zone ? [{ zoneId: zone === "NONE" ? null : zone }] : []),
   ],
 });
@@ -368,16 +377,17 @@ async function overview(db: DbOrTx, ctx: AuthContext, p: ReportParams["overview"
     .sort((a, b) => (a.label === NOT_RECORDED.label ? 1 : b.label === NOT_RECORDED.label ? -1 : b.value - a.value));
   return {
     title: REPORTS.overview.title,
-    subtitle: [zoneLabel ?? "Whole register", `${total.toLocaleString("en-UG")} members`].join(" · "),
+    subtitle: [zoneLabel ?? "Active register", `${total.toLocaleString("en-UG")} active and irregular members`].join(" · "),
     rowCount: total,
     sections: [
       {
         heading: "Register",
         summary: [
-          { label: "Members on the register", value: total },
+          { label: "Active register", value: total },
           { label: "Complete profiles", value: share(stats.complete ?? 0, total) },
           { label: "Only name and ID recorded", value: share(stats.nameOnly ?? 0, total) },
           { label: "Ministries with members", value: stats.ministries.length },
+          { label: "Dormant (not counted)", value: stats.dormant ?? 0 },
         ],
       },
       { heading: "Membership status", summary: stats.status.map((x) => ({ label: statusLabel(x.key), value: share(x.n, total) })) },
@@ -411,7 +421,7 @@ async function movements(db: DbOrTx, ctx: AuthContext, p: ReportParams["movement
   if (from > to) [from, to] = [to, from];
   const type = p.type && (MOVEMENT_TYPES as readonly string[]).includes(p.type) ? (p.type as (typeof MOVEMENT_TYPES)[number]) : undefined;
   const events = await db.membershipEvent.findMany({
-    where: { member: liveWhere(ctx), occurredOn: { gte: from, lt: new Date(to.getTime() + 86400_000) }, type: type ? type : { in: [...MOVEMENT_TYPES] } },
+    where: { member: liveWhere(ctx, undefined, false), occurredOn: { gte: from, lt: new Date(to.getTime() + 86400_000) }, type: type ? type : { in: [...MOVEMENT_TYPES] } },
     select: { type: true, occurredOn: true, fromStatus: true, toStatus: true, title: true, member: { select: { memberId: true, lastName: true, firstName: true } } },
     orderBy: [{ occurredOn: "asc" }, { createdAt: "asc" }],
     take: REPORT_MAX_ROWS,
@@ -422,7 +432,7 @@ async function movements(db: DbOrTx, ctx: AuthContext, p: ReportParams["movement
     date: fmtDate(e.occurredOn!),
     type: EVENT_LABELS[e.type] ?? e.type,
     change: e.toStatus ? `${e.fromStatus ? statusLabel(e.fromStatus) : NOT_RECORDED.label} → ${statusLabel(e.toStatus)}` : e.title,
-    direction: movement(e) > 0 ? "Gain" : movement(e) < 0 ? "Loss" : "—",
+    direction: realMovement(e) > 0 ? "Gain" : realMovement(e) < 0 ? "Loss" : "—",
   }));
   const tally = new Map<string, number>();
   for (const r of rows) tally.set(r.type, (tally.get(r.type) ?? 0) + 1);

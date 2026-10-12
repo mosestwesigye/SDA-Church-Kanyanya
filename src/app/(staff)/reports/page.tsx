@@ -44,7 +44,7 @@ export default async function ReportsPage() {
     <>
       <TopBar />
       <main className="p-4 md:p-7">
-        <PageHeader title="Reports" subtitle="Official reports from the membership register. Preview on screen, print, or download as PDF or Excel." />
+        <PageHeader title="Reports" subtitle="Official reports from the active register (Active and Irregular members). Preview on screen, print, or download as PDF or Excel." />
 
         {keys.length === 0 ? (
           <EmptyState title="No reports for your role">Reports need access to member profiles. Ask the Church Clerk if you need one.</EmptyState>
@@ -90,11 +90,11 @@ export default async function ReportsPage() {
                     </dl>
                     {figure(quarterly, "Membership", "Records added to the register (net)") !== 0 && (
                       <p className="mt-5 rounded-[8px] bg-surface-2 px-3 py-2 text-[13px]">
-                        Includes <strong>{figure(quarterly, "Membership", "Records added to the register (net)").toLocaleString("en-UG")}</strong> records added to the register this quarter (for example by import).
+                        Includes <strong>{figure(quarterly, "Membership", "Records added to the register (net)").toLocaleString("en-UG")}</strong> records added to the active register this quarter (by import, or given Active or Irregular status from the dormant list).
                       </p>
                     )}
                     <p className="mt-4 border-t border-line pt-4 text-[13px] text-ink-2">
-                      Members on the church books: active, irregular and under discipline, plus records with no status yet. Approved transfers, deaths and other status changes count as gains or losses on their effective date.
+                      Membership counts Active and Irregular members only; dormant records are left out until the clerk updates their status. Approved transfers, deaths and other status changes count as gains or losses on their effective date.
                     </p>
                   </div>
                 </div>

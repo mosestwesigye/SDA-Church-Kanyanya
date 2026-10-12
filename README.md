@@ -80,6 +80,15 @@ Members sign in at `/login/phone` with the phone number on their record and a 6-
 - Approved fields are written through the audited member service with source `self-service`.
 - SMS goes through Africa's Talking (`AT_USERNAME`, `AT_API_KEY`, optional `AT_SENDER_ID`). In development the code is logged with the phone number masked.
 
+## Active register and dormant members
+
+On the Church Clerk's guidance, the dashboard and reports count only **Active** and **Irregular** members (the active register). Everyone else is listed under **Dormant members**:
+- *Not recorded* (no status yet): the clerk marks them Active or Irregular directly, one by one or in bulk.
+- *Self transferred*, *Under discipline*, *Left the faith*: the clerk sends a reactivation request; they return to the active register once the Pastor approves (restoration for discipline).
+- *Deceased*: kept for the record only.
+
+The quarterly report counts the active register; a status recorded for the first time is shown with records added, not as a membership gain.
+
 ## Board minutes
 
 Board minutes (sidebar → Board minutes) keep the minutes of church board, business, elders' council and nominating committee meetings.

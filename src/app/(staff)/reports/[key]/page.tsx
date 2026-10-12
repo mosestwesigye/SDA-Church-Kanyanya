@@ -5,7 +5,7 @@ import { DownloadReport, PrintButton } from "@/components/reports/report-actions
 import { TopBar } from "@/components/shell/topbar";
 import { EmptyState } from "@/components/ui/states";
 import { REPORT_META, ReportIcon } from "@/components/reports/report-meta";
-import { STATUS_KEYS, STATUS_META } from "@/lib/labels";
+import { STATUS_META } from "@/lib/labels";
 import { requirePermission } from "@/server/auth/session";
 import { can } from "@/server/authz/policy";
 import { db } from "@/server/db";
@@ -232,9 +232,8 @@ async function ParamsForm({ reportKey, p, ctx }: { reportKey: ReportKey; p: Reco
   if (reportKey === "status") {
     controls.push(field("r-status", "Status", (
       <select id="r-status" name="status" defaultValue={String(p.status ?? "")} className={sel}>
-        <option value="">All statuses</option>
-        {STATUS_KEYS.map((s) => <option key={s} value={s}>{STATUS_META[s].label}</option>)}
-        <option value="NONE">Not recorded</option>
+        <option value="">Active and irregular</option>
+        {(["ACTIVE", "IRREGULAR"] as const).map((s) => <option key={s} value={s}>{STATUS_META[s].label} only</option>)}
       </select>
     )));
   }

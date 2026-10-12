@@ -76,6 +76,7 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
   ]);
   const pendingTotal = pending?.reduce((n, p) => n + p._count, 0) ?? 0;
   const active = s.status.find((x) => x.key === "ACTIVE")?.n ?? 0;
+  const irregular = s.status.find((x) => x.key === "IRREGULAR")?.n ?? 0;
   const pct = s.complete !== null && s.total ? Math.round((s.complete / s.total) * 100) : 0;
 
   const statusData: Datum[] = s.status.map((x) => ({
@@ -115,7 +116,7 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
         </PageHeader>
 
         {/* Row 1: headline tiles */}
-        <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4" aria-label="Summary">
+        <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-[1.4fr_repeat(4,minmax(0,1fr))]" aria-label="Summary">
           {s.complete !== null && (
             <div className="rounded-[10px] bg-[var(--hero)] p-5 text-[var(--hero-ink)]">
               <div className="text-[13px] font-medium opacity-90">Profile completeness</div>
@@ -134,7 +135,17 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
               </div>
             </div>
           )}
-          <Stat icon="members" label="Total membership" value={fmt(s.total)} note={s.profile ? `${fmt(active)} active · ${fmt(s.total - active)} other statuses` : "Members you can see"} href="/members" />
+          <Stat icon="members" label={s.profile ? "Active membership" : "Total membership"} value={fmt(s.total)} note={s.profile ? `${fmt(active)} active · ${fmt(irregular)} irregular` : "Members you can see"} href="/members?status=ACTIVE,IRREGULAR" />
+          {s.dormant !== null && (
+            <Stat
+              icon="dormant"
+              label="Dormant records"
+              value={fmt(s.dormant)}
+              tone={s.dormant ? "attention" : "clear"}
+              note={s.dormant ? "Not counted — update their status" : "Everyone has an active status"}
+              href="/dormant"
+            />
+          )}
           {pending && (
             <Stat
               icon="transfers"
@@ -160,10 +171,10 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
         {/* Row 2: status, gender, age */}
         {s.profile && (
           <section className="mt-4 grid gap-4 xl:grid-cols-[1.6fr_1.3fr_1.3fr]">
-            <Card title="Membership by status" subtitle={`${fmt(s.total)} records`} action={can(ctx, "report", "read") ? { href: "/reports/status", label: "Status report" } : undefined}>
+            <Card title="Active register" subtitle={`${fmt(s.total)} active and irregular members`} action={can(ctx, "report", "read") ? { href: "/reports/status", label: "Status report" } : undefined}>
               <StackedBar data={statusData} caption="Members by membership status" />
             </Card>
-            <Card title="Gender" subtitle="All members">
+            <Card title="Gender" subtitle="Active register">
               <Donut data={genderData} caption="Members by gender" />
             </Card>
             <Card title="Age band" subtitle="From date or year of birth" badge={s.unknownAge ? <WarnBadge>{fmt(s.unknownAge)} no DOB</WarnBadge> : undefined}>

@@ -30,6 +30,12 @@ const PATHS: Record<string, React.ReactNode> = {
       <path d="M10.5 8.6 7 13.8M13.5 8.6l3.5 5.2M8 16h8" />
     </>
   ),
+  dormant: (
+    <>
+      <path d="M20 14.5A8 8 0 1 1 9.5 4a6.5 6.5 0 0 0 10.5 10.5Z" />
+      <path d="M15 4h4l-4 4h4" />
+    </>
+  ),
   cleanup: (
     <>
       <path d="m14.5 4.5 5 5L9 20H4v-5L14.5 4.5Z" />

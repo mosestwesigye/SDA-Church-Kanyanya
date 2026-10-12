@@ -22,7 +22,7 @@ export const REPORT_META: Record<string, { category: string; includes: string[];
   },
   status: {
     category: "Membership",
-    includes: ["Counts per status", "Member list under each status", "Filter by zone"],
+    includes: ["Active and Irregular counts", "Member list under each", "Filter by zone"],
     icon: <><circle cx="12" cy="12" r="8.5" /><path d="M12 3.5V12l6 6" /></>,
   },
   "ministry-roster": {

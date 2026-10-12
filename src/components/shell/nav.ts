@@ -5,7 +5,7 @@ export type NavItem = {
   label: string;
   /** Permission needed to see the item. */
   need?: [Resource, string];
-  countKey?: "members" | "cleanup" | "approvals" | "ministries" | "corrections";
+  countKey?: "members" | "cleanup" | "approvals" | "ministries" | "corrections" | "dormant";
   /** Counts that mean work is waiting are highlighted (and hidden at zero). */
   attention?: boolean;
   icon: string;
@@ -18,6 +18,7 @@ export const NAV: { section: string; items: NavItem[] }[] = [
     items: [
       { href: "/dashboard", label: "Dashboard", icon: "dashboard", mobile: true },
       { href: "/members", label: "Members", icon: "members", need: ["member", "read"], countKey: "members", mobile: true },
+      { href: "/dormant", label: "Dormant members", icon: "dormant", need: ["member.profile", "read"], countKey: "dormant" },
       { href: "/families", label: "Families", icon: "families", need: ["household", "read"] },
       { href: "/cells", label: "Cells", icon: "cells", need: ["household", "read"] },
       { href: "/cleanup", label: "Data clean-up", icon: "cleanup", need: ["cleanup", "use"], countKey: "cleanup", attention: true, mobile: true },
