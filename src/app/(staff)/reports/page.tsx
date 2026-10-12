@@ -114,7 +114,7 @@ export default async function ReportsPage() {
                             <span className="grid size-10 place-items-center rounded-[10px] bg-primary-soft text-primary">
                               <ReportIcon reportKey={k} />
                             </span>
-                            <span className="rounded-full bg-surface-2 px-2.5 py-0.5 text-[11px] font-semibold uppercase tracking-wider text-ink-2">{meta?.category}</span>
+                            <span className="rounded-full bg-surface-2 px-2.5 py-0.5 text-[11px] font-semibold uppercase tracking-wider text-ink-2">{REPORTS[k].category}</span>
                           </span>
                           <span className="mt-4 block text-[16px] font-semibold">{REPORTS[k].title}</span>
                           <span className="mt-1 block text-[13px] text-ink-2">{REPORTS[k].description}</span>

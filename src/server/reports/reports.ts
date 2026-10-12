@@ -3,7 +3,7 @@ import type { MembershipStatus, Prisma } from "@/generated/prisma/client";
 import { REQUIRED_FIELD_LABELS } from "@/lib/completeness";
 import { formatDob } from "@/lib/dob";
 import { NOT_RECORDED, STATUS_META, type StatusKey } from "@/lib/labels";
-import type { Resource } from "../authz/catalog";
+import { ROLE_LABELS, type Resource } from "../authz/catalog";
 import { assertCan, can, memberScopeWhere, type AuthContext } from "../authz/policy";
 import { dashboardStats } from "../dashboard/stats";
 import type { DbOrTx } from "../db";
@@ -21,18 +21,31 @@ export const REPORT_MAX_ROWS = 5000;
 export type ReportKey =
   | "quarterly" | "overview" | "movements" | "status" | "age-groups" | "ministry-roster" | "zones" | "families" | "birthdays" | "data-quality" | "minutes";
 
-export const REPORTS: Record<ReportKey, { title: string; description: string; needsProfile: boolean; needs?: [Resource, string][] }> = {
-  quarterly: { title: "Clerk’s quarterly report", description: "Membership at the start and end of a quarter, gains and losses by type, and the register breakdown.", needsProfile: true },
-  overview: { title: "Membership overview", description: "The register at a glance: status, gender, age, zones and ministries, with percentages.", needsProfile: true },
-  movements: { title: "Membership changes", description: "Baptisms, professions of faith, transfers, deaths and other status changes between two dates.", needsProfile: true },
-  status: { title: "Active & irregular members", description: "The active register: Active and Irregular members, counted and listed under each status.", needsProfile: true },
-  "age-groups": { title: "Age groups", description: "Members by department age group — Adventurers, Pathfinders, Youth, Adults and Senior citizens.", needsProfile: true },
-  "ministry-roster": { title: "Ministry roster", description: "Members of one ministry with their roles and contacts.", needsProfile: false },
-  zones: { title: "Zone lists", description: "Members grouped by zone, for zone leaders and visitation.", needsProfile: true },
-  families: { title: "Families & cells", description: "Every family and cell with its head or leader and members.", needsProfile: true, needs: [["household", "read"], ["member.sensitive", "read"]] },
-  birthdays: { title: "Birthday list", description: "Members with a full date of birth whose birthday falls in a month.", needsProfile: true },
-  "data-quality": { title: "Records needing attention", description: "Incomplete member records and the details each one is missing, for the clean-up team.", needsProfile: true },
-  minutes: { title: "Board minutes register", description: "Minutes recorded for a year: references, dates, approval status and files.", needsProfile: false, needs: [["minutes", "read"]] },
+type ReportDef = {
+  title: string;
+  description: string;
+  /** Library grouping, also printed above the title. */
+  category: string;
+  /** Short code used in the document reference (SDAK/RPT/<code>/…). */
+  code: string;
+  needsProfile: boolean;
+  needs?: [Resource, string][];
+  /** Official returns carry a prepared/verified block for signatures. */
+  signOff?: boolean;
+};
+
+export const REPORTS: Record<ReportKey, ReportDef> = {
+  quarterly: { title: "Clerk’s quarterly report", category: "Conference", code: "QTR", signOff: true, description: "Membership at the start and end of a quarter, gains and losses by type, and the register breakdown.", needsProfile: true },
+  overview: { title: "Membership overview", category: "Membership", code: "OVW", signOff: true, description: "The register at a glance: status, gender, age, zones and ministries, with percentages.", needsProfile: true },
+  movements: { title: "Membership changes", category: "Conference", code: "MOV", signOff: true, description: "Baptisms, professions of faith, transfers, deaths and other status changes between two dates.", needsProfile: true },
+  status: { title: "Active & irregular members", category: "Membership", code: "REG", signOff: true, description: "The active register: Active and Irregular members, counted and listed under each status.", needsProfile: true },
+  "age-groups": { title: "Age groups", category: "Departments", code: "AGE", description: "Members by department age group — Adventurers, Pathfinders, Youth, Adults and Senior citizens.", needsProfile: true },
+  "ministry-roster": { title: "Ministry roster", category: "Ministries", code: "MIN", description: "Members of one ministry with their roles and contacts.", needsProfile: false },
+  zones: { title: "Zone lists", category: "Visitation", code: "ZON", description: "Members grouped by zone, for zone leaders and visitation.", needsProfile: true },
+  families: { title: "Families & cells", category: "Families / cells", code: "FAM", description: "Every family and cell with its head or leader and members.", needsProfile: true, needs: [["household", "read"], ["member.sensitive", "read"]] },
+  birthdays: { title: "Birthday list", category: "Pastoral care", code: "BDY", description: "Members with a full date of birth whose birthday falls in a month.", needsProfile: true },
+  "data-quality": { title: "Records needing attention", category: "Data quality", code: "DQL", description: "Incomplete member records and the details each one is missing, for the clean-up team.", needsProfile: true },
+  minutes: { title: "Board minutes register", category: "Governance", code: "BMR", signOff: true, description: "Minutes recorded for a year: references, dates, approval status and files.", needsProfile: false, needs: [["minutes", "read"]] },
 };
 
 export const REPORT_KEYS = Object.keys(REPORTS) as ReportKey[];
@@ -52,12 +65,21 @@ export type ReportSection = {
   table?: Table;
 };
 
+/** What a report builder returns; buildReport adds the document details. */
+export type ReportBody = Omit<Report, "generatedAt" | "generatedBy" | "generatedRole" | "reference" | "category" | "signOff" | "key" | "omitted">;
+
 export type Report = {
   key: ReportKey;
   title: string;
   subtitle: string;
   generatedAt: Date;
   generatedBy: string;
+  /** The preparer's role, e.g. "Church Clerk". */
+  generatedRole: string | null;
+  /** Document reference, e.g. SDAK/RPT/QTR/20261012-1930. */
+  reference: string;
+  category: string;
+  signOff: boolean;
   sections: ReportSection[];
   rowCount: number;
   /** Columns left out because the viewer may not read them. */
@@ -172,7 +194,7 @@ const EVENT_LABELS: Record<string, string> = {
   STATUS_CHANGE: "Other status change",
 };
 
-async function quarterly(db: DbOrTx, ctx: AuthContext, p: ReportParams["quarterly"], omitted: Set<string>): Promise<Omit<Report, "generatedAt" | "generatedBy" | "key" | "omitted">> {
+async function quarterly(db: DbOrTx, ctx: AuthContext, p: ReportParams["quarterly"], omitted: Set<string>): Promise<ReportBody> {
   const { start, end } = quarterRange(p.year, p.quarter);
   const endExclusive = new Date(end.getTime() + 86400_000);
   const live: Prisma.MemberWhereInput = { AND: [memberScopeWhere(ctx) as Prisma.MemberWhereInput, { deletedAt: null, mergedIntoId: null, purgedAt: null }] };
@@ -266,7 +288,7 @@ async function byStatus(db: DbOrTx, ctx: AuthContext, p: ReportParams["status"],
   const groups = statuses.map((s) => ({ s, list: rows.filter((r) => (r.status ?? "NONE") === s) }));
   return {
     title: REPORTS.status.title,
-    subtitle: [p.status ? statusLabel(p.status) : "All statuses", zoneLabel].filter(Boolean).join(" · "),
+    subtitle: [p.status ? `${statusLabel(p.status)} only` : "Active and Irregular", zoneLabel].filter(Boolean).join(" · "),
     rowCount: rows.length,
     sections: [
       { heading: "Summary", summary: [...groups.map((g) => ({ label: statusLabel(g.s), value: g.list.length })), { label: "Total", value: rows.length }] },
@@ -634,7 +656,7 @@ export async function buildReport<K extends ReportKey>(db: DbOrTx, ctx: AuthCont
   for (const [resource, action] of REPORTS[key].needs ?? []) {
     if (!can(ctx, resource, action)) throw new ForbiddenError("You don’t have access to this report.");
   }
-  const builders: { [R in ReportKey]: (p: ReportParams[R]) => Promise<Omit<Report, "generatedAt" | "generatedBy" | "key" | "omitted">> } = {
+  const builders: { [R in ReportKey]: (p: ReportParams[R]) => Promise<ReportBody> } = {
     quarterly: (p) => quarterly(db, ctx, p, omitted),
     overview: (p) => overview(db, ctx, p),
     movements: (p) => movements(db, ctx, p, omitted),
@@ -648,7 +670,39 @@ export async function buildReport<K extends ReportKey>(db: DbOrTx, ctx: AuthCont
     minutes: (p) => minutesRegister(db, ctx, p),
   };
   const body = await (builders[key] as (p: ReportParams[K]) => ReturnType<(typeof builders)["quarterly"]>)(params);
-  return { key, ...body, generatedAt: now(), generatedBy: ctx.label, omitted: [...omitted] };
+  const at = now();
+  const role = ctx.roles.find((r) => r !== "MEMBER");
+  return {
+    key,
+    ...body,
+    generatedAt: at,
+    generatedBy: ctx.label,
+    generatedRole: role ? ROLE_LABELS[role] : null,
+    reference: reportReference(key, at),
+    category: REPORTS[key].category,
+    signOff: Boolean(REPORTS[key].signOff),
+    omitted: [...omitted],
+  };
+}
+
+/**
+ * Document order shared by the screen and the PDF: the first summary as key
+ * figures (when short), other summaries, then tables. Sections are numbered in
+ * this order.
+ */
+export function documentSections(r: Pick<Report, "sections">) {
+  const first = r.sections.find((s) => s.summary);
+  const tiles = first && first.summary!.length <= 6 ? first : null;
+  const summaries = r.sections.filter((s) => s.summary && s !== tiles);
+  const tables = r.sections.filter((s) => s.table && !s.summary);
+  const ordered = [...(tiles ? [tiles] : []), ...summaries, ...tables];
+  return { tiles, summaries, tables, ordered, number: (s: ReportSection) => ordered.indexOf(s) + 1 };
+}
+
+/** SDAK/RPT/<code>/<yyyymmdd>-<hhmm> in East Africa Time. */
+export function reportReference(key: ReportKey, at: Date) {
+  const eat = new Date(at.getTime() + 3 * 3600_000).toISOString();
+  return `SDAK/RPT/${REPORTS[key].code}/${eat.slice(0, 10).replace(/-/g, "")}-${eat.slice(11, 16).replace(":", "")}`;
 }
 
 /** Reports the caller may open (for the reports index). */

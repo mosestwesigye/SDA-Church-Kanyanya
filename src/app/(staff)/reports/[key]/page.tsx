@@ -1,17 +1,19 @@
 import type { Metadata } from "next";
+import Image from "next/image";
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 import { DownloadReport, PrintButton } from "@/components/reports/report-actions";
 import { TopBar } from "@/components/shell/topbar";
 import { EmptyState } from "@/components/ui/states";
-import { REPORT_META, ReportIcon } from "@/components/reports/report-meta";
+import { ReportIcon } from "@/components/reports/report-meta";
+import { LETTERHEAD } from "@/lib/letterhead";
 import { STATUS_META } from "@/lib/labels";
 import { requirePermission } from "@/server/auth/session";
 import { can } from "@/server/authz/policy";
 import { db } from "@/server/db";
 import { ForbiddenError, NotFoundError } from "@/server/errors";
 import { listMinistries } from "@/server/ministries/service";
-import { AGE_GROUPS, buildReport, isReportKey, MOVEMENT_TYPE_LABELS, parseReportParams, REPORTS, type Report, type ReportKey } from "@/server/reports/reports";
+import { AGE_GROUPS, buildReport, documentSections, isReportKey, MOVEMENT_TYPE_LABELS, parseReportParams, REPORTS, type Report, type ReportKey } from "@/server/reports/reports";
 
 export async function generateMetadata({ params }: { params: Promise<{ key: string }> }): Promise<Metadata> {
   const { key } = await params;
@@ -37,76 +39,157 @@ export default async function ReportPage({ params, searchParams }: { params: Pro
   }
   const search = new URLSearchParams(Object.entries(p).filter(([, v]) => v !== undefined && v !== "").map(([k, v]) => [k, String(v)])).toString();
 
-  const meta = REPORT_META[key];
   const canDownload = can(ctx, "export", "run");
-  const generated = report.generatedAt.toLocaleString("en-GB", { timeZone: "Africa/Kampala", day: "numeric", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit", hour12: false });
-  const tables = report.sections.filter((s) => s.table);
-  const firstSummary = report.sections.find((s) => s.summary);
+  const eat = (o: Intl.DateTimeFormatOptions) => report.generatedAt.toLocaleString("en-GB", { timeZone: "Africa/Kampala", ...o });
+  const generatedDate = eat({ day: "numeric", month: "long", year: "numeric" });
+  const generatedTime = eat({ hour: "2-digit", minute: "2-digit", hour12: false });
+
+  const { tiles, summaries, tables, number: no } = documentSections(report);
 
   return (
     <>
       <div className="print:hidden"><TopBar /></div>
       <main className="p-4 md:p-7 print:p-0">
-        <div className="mb-4 flex flex-wrap items-center justify-between gap-3 print:hidden">
-          <nav aria-label="Breadcrumb" className="text-[14px] text-ink-2">
-            <Link href="/reports" className="hover:text-ink hover:underline">Reports</Link>
-            <span className="mx-1.5 text-ink-3">/</span>
-            <span className="text-ink">{REPORTS[key].title}</span>
-          </nav>
-          <div className="flex gap-2">
-            <PrintButton />
-            {canDownload && <DownloadReport reportKey={key} search={search ? `?${search}` : ""} title={report.title.toLowerCase()} />}
+        <div className="mx-auto max-w-[1180px]">
+          <div className="mb-4 flex flex-wrap items-center justify-between gap-3 print:hidden">
+            <nav aria-label="Breadcrumb" className="text-[14px] text-ink-2">
+              <Link href="/reports" className="hover:text-ink hover:underline">Reports</Link>
+              <span className="mx-1.5 text-ink-3">/</span>
+              <span className="text-ink">{REPORTS[key].title}</span>
+            </nav>
+            <div className="flex gap-2">
+              <PrintButton />
+              {canDownload && <DownloadReport reportKey={key} search={search ? `?${search}` : ""} title={report.title.toLowerCase()} />}
+            </div>
           </div>
-        </div>
 
-        <header className="card mb-5 overflow-hidden print:border-0 print:shadow-none">
-          <div className="flex flex-wrap items-start justify-between gap-5 p-5 md:p-7">
-            <div className="flex min-w-0 items-start gap-4">
-              <span className="grid size-12 shrink-0 place-items-center rounded-[12px] bg-primary-soft text-primary print:hidden">
-                <ReportIcon reportKey={key} className="size-6" />
+          <ParamsForm reportKey={key} p={p as Record<string, unknown>} ctx={ctx} />
+
+          <article className="card overflow-hidden print:rounded-none print:border-0 print:shadow-none">
+            {/* Letterhead */}
+            <div aria-hidden className="h-1.5 bg-primary print:h-1" />
+            <header className="flex flex-wrap items-start justify-between gap-5 px-6 pb-5 pt-6 md:px-10 md:pt-8">
+              <div className="flex items-center gap-4">
+                <span className="grid size-14 shrink-0 place-items-center rounded-[12px] bg-sidebar print:[-webkit-print-color-adjust:exact] print:[print-color-adjust:exact]">
+                  <Image src="/sda-mark.png" alt="" width={30} height={33} />
+                </span>
+                <div>
+                  <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-primary">{LETTERHEAD.church}</p>
+                  <p className="text-[19px] font-semibold leading-tight">{LETTERHEAD.local}</p>
+                  <p className="text-[13px] text-ink-2">{LETTERHEAD.conference} · {LETTERHEAD.office}</p>
+                </div>
+              </div>
+              <dl className="text-[13px] sm:text-right">
+                <dt className="text-[10px] font-semibold uppercase tracking-[0.14em] text-ink-3">Reference</dt>
+                <dd className="mono text-[14px] font-semibold text-primary">{report.reference}</dd>
+                <dt className="mt-1.5 text-[10px] font-semibold uppercase tracking-[0.14em] text-ink-3">Date</dt>
+                <dd>{generatedDate}</dd>
+              </dl>
+            </header>
+            <div aria-hidden className="mx-6 border-t-2 border-ink/80 md:mx-10" />
+            <div aria-hidden className="mx-6 mt-[3px] border-t border-ink/30 md:mx-10" />
+
+            {/* Title */}
+            <div className="flex items-start gap-4 px-6 pb-5 pt-6 md:px-10">
+              <span className="mt-1 grid size-11 shrink-0 place-items-center rounded-[10px] bg-primary-soft text-primary print:hidden">
+                <ReportIcon reportKey={key} className="size-5" />
               </span>
               <div className="min-w-0">
-                <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-ink-3">
-                  Seventh-day Adventist Church Kanyanya{meta && <> · {meta.category}</>}
-                </p>
-                <h1 className="mt-1 text-[24px] font-semibold leading-tight md:text-[28px]">{report.title}</h1>
+                <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-ink-3">{report.category} report</p>
+                <h1 className="mt-0.5 text-[26px] font-semibold leading-tight md:text-[30px]">{report.title}</h1>
                 <p className="mt-1 text-[15px] text-ink-2">{report.subtitle}</p>
               </div>
             </div>
-            <dl className="grid grid-cols-2 gap-x-6 gap-y-1 text-[13px]">
-              <dt className="text-ink-3">Generated</dt><dd className="text-right">{generated} EAT</dd>
-              <dt className="text-ink-3">By</dt><dd className="text-right">{report.generatedBy}</dd>
-              <dt className="text-ink-3">Records</dt><dd className="text-right font-semibold tabular-nums">{report.rowCount.toLocaleString("en-UG")}</dd>
+
+            {/* Document details */}
+            <dl className="mx-6 grid grid-cols-2 overflow-hidden rounded-[10px] border border-line bg-surface-2/60 md:mx-10 md:grid-cols-4">
+              <Detail label="Prepared by">{report.generatedBy}{report.generatedRole && <span className="block text-[12px] text-ink-2">{report.generatedRole}</span>}</Detail>
+              <Detail label="Generated">{generatedDate}<span className="block text-[12px] text-ink-2">{generatedTime} EAT</span></Detail>
+              <Detail label="Records">{report.rowCount.toLocaleString("en-UG")}</Detail>
+              <Detail label="Classification">Confidential<span className="block text-[12px] text-ink-2">Church administration only</span></Detail>
             </dl>
-          </div>
-          <ParamsForm reportKey={key} p={p as Record<string, unknown>} ctx={ctx} />
-        </header>
 
-        {report.sections.length === 0 ? (
-          <EmptyState title="Choose what to report on">Pick the options above, then select Update report.</EmptyState>
-        ) : (
-          <div className="space-y-5">
-            {firstSummary && firstSummary.summary!.length <= 6 && <Tiles section={firstSummary} />}
-            {report.sections.filter((s) => s.summary && !(s === firstSummary && s.summary.length <= 6)).length > 0 && (
-              <div className="grid gap-5 lg:grid-cols-2 print:block print:space-y-4">
-                {report.sections
-                  .filter((s) => s.summary && !(s === firstSummary && s.summary.length <= 6))
-                  .map((s) => <SummaryCard key={s.heading} section={s} />)}
-              </div>
-            )}
-            {tables.map((s) => <TableCard key={s.heading} section={s} />)}
-          </div>
-        )}
+            {/* Body */}
+            <div className="px-6 py-7 md:px-10">
+              {report.sections.length === 0 ? (
+                <EmptyState title="Choose what to report on">Pick the options above, then select Update report.</EmptyState>
+              ) : (
+                <div className="space-y-8">
+                  {tiles && <Tiles section={tiles} n={no(tiles)} />}
+                  {summaries.length > 0 && (
+                    <div className="grid gap-x-8 gap-y-8 lg:grid-cols-2 print:block print:space-y-6">
+                      {summaries.map((s) => <SummaryCard key={s.heading} section={s} n={no(s)} />)}
+                    </div>
+                  )}
+                  {tables.map((s) => <TableCard key={s.heading} section={s} n={no(s)} />)}
+                </div>
+              )}
 
-        <p className="mt-6 flex items-start gap-2 rounded-[10px] border border-line bg-surface px-4 py-3 text-[12px] text-ink-2">
-          <svg aria-hidden viewBox="0 0 24 24" className="mt-px size-4 shrink-0 text-primary" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M12 3 4.5 6v5.5c0 4.6 3.2 8.4 7.5 9.5 4.3-1.1 7.5-4.9 7.5-9.5V6L12 3Z" /></svg>
-          <span>
-            Contains personal data protected by the Data Protection and Privacy Act, 2019 — for church administration only.
-            {report.omitted.length > 0 && <> Columns not shown for your role: {report.omitted.join(", ")}.</>}
-          </span>
-        </p>
+              {report.signOff && report.sections.length > 0 && <SignOff report={report} />}
+            </div>
+
+            {/* Footer */}
+            <footer className="flex flex-wrap items-start justify-between gap-x-6 gap-y-2 border-t border-line bg-surface-2/60 px-6 py-4 text-[12px] text-ink-2 md:px-10">
+              <p className="flex max-w-2xl items-start gap-2">
+                <svg aria-hidden viewBox="0 0 24 24" className="mt-px size-4 shrink-0 text-primary" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M12 3 4.5 6v5.5c0 4.6 3.2 8.4 7.5 9.5 4.3-1.1 7.5-4.9 7.5-9.5V6L12 3Z" /></svg>
+                <span>
+                  Contains personal data protected by the Data Protection and Privacy Act, 2019 — for church administration only.
+                  {report.omitted.length > 0 && <> Columns not shown for your role: {report.omitted.join(", ")}.</>}
+                </span>
+              </p>
+              <p className="mono whitespace-nowrap text-ink-3">{report.reference} · End of report</p>
+            </footer>
+          </article>
+        </div>
       </main>
     </>
+  );
+}
+
+function Detail({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <div className="border-line px-4 py-3 [&:not(:last-child)]:border-r max-md:[&:nth-child(2)]:border-r-0 max-md:[&:nth-child(-n+2)]:border-b">
+      <dt className="text-[10px] font-semibold uppercase tracking-[0.12em] text-ink-3">{label}</dt>
+      <dd className="mt-0.5 text-[14px] font-medium">{children}</dd>
+    </div>
+  );
+}
+
+function SectionHeading({ n, section, aside }: { n: number; section: Section; aside?: React.ReactNode }) {
+  return (
+    <div className="mb-3">
+      <div className="flex flex-wrap items-baseline justify-between gap-2 border-b border-line pb-2">
+        <h2 className="flex items-baseline gap-2.5 text-[16px] font-semibold">
+          <span className="mono text-[13px] font-semibold text-primary">{String(n).padStart(2, "0")}</span>
+          {section.heading}
+        </h2>
+        {aside}
+      </div>
+      {section.note && <p className="mt-2 text-[12px] leading-relaxed text-ink-3">{section.note}</p>}
+    </div>
+  );
+}
+
+function SignOff({ report }: { report: Report }) {
+  const line = (role: string, name?: string) => (
+    <div>
+      <p className="text-[10px] font-semibold uppercase tracking-[0.12em] text-ink-3">{role}</p>
+      <div className="mt-8 border-b border-ink/40" />
+      <div className="mt-1.5 flex justify-between gap-4 text-[12px] text-ink-2">
+        <span>{name ?? "Name"}</span>
+        <span>Signature &amp; date</span>
+      </div>
+    </div>
+  );
+  return (
+    <section aria-label="Sign-off" className="mt-10 break-inside-avoid rounded-[10px] border border-line p-5">
+      <p className="text-[13px] font-semibold">Certification</p>
+      <p className="mt-0.5 text-[12px] text-ink-2">I certify that this report is a true record of the church register on the date shown.</p>
+      <div className="mt-2 grid gap-6 sm:grid-cols-2">
+        {line(`Prepared by${report.generatedRole ? ` · ${report.generatedRole}` : ""}`, report.generatedBy)}
+        {line("Verified by · Pastor / Board chair")}
+      </div>
+    </section>
   );
 }
 
@@ -115,28 +198,36 @@ type Section = Report["sections"][number];
 const num = (v: string | number) => (typeof v === "number" ? v : Number(String(v).match(/^-?[\d,]+/)?.[0]?.replace(/,/g, "") ?? 0));
 const show = (v: string | number) => (typeof v === "number" ? v.toLocaleString("en-UG") : v);
 
-function Tiles({ section }: { section: Section }) {
+const XL_COLS: Record<number, string> = { 2: "print:grid-cols-2", 3: "print:grid-cols-3", 4: "xl:grid-cols-4 print:grid-cols-4", 5: "xl:grid-cols-5 print:grid-cols-5", 6: "xl:grid-cols-6 print:grid-cols-6" };
+
+function Tiles({ section, n }: { section: Section; n: number }) {
+  const items = section.summary!;
   return (
-    <section aria-label={section.heading} className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-6 print:grid-cols-3">
-      {section.summary!.map((it) => (
-        <div key={it.label} className={`card p-4 ${/^total|at end of/i.test(it.label) ? "border-primary/40 bg-primary-soft/40" : ""}`}>
-          <p className="text-[12px] font-medium text-ink-2">{it.label}</p>
-          <p className="mt-1.5 text-[26px] font-semibold leading-none tabular-nums">{show(it.value)}</p>
-        </div>
-      ))}
-      {section.note && <p className="col-span-full text-[12px] text-ink-3">{section.note}</p>}
+    <section className="break-inside-avoid">
+      <SectionHeading n={n} section={{ ...section, note: undefined }} />
+      <div className={`grid grid-cols-2 overflow-hidden rounded-[10px] border border-line md:grid-cols-3 ${XL_COLS[items.length] ?? ""}`}>
+        {items.map((it) => {
+          const key = /^total|at end of/i.test(it.label);
+          return (
+            <div key={it.label} className={`-mb-px -mr-px flex flex-col justify-between gap-2 border-b border-r border-line px-4 py-4 ${key ? "bg-primary-soft/60" : ""}`}>
+              <p className="text-[12px] font-medium leading-snug text-ink-2">{it.label}</p>
+              <p className={`text-[28px] font-semibold leading-none tabular-nums ${key ? "text-primary" : ""}`}>{show(it.value)}</p>
+            </div>
+          );
+        })}
+      </div>
+      {section.note && <p className="mt-2 text-[12px] leading-relaxed text-ink-3">{section.note}</p>}
     </section>
   );
 }
 
-function SummaryCard({ section }: { section: Section }) {
+function SummaryCard({ section, n }: { section: Section; n: number }) {
   const items = section.summary!;
   const max = Math.max(1, ...items.map((i) => num(i.value)));
   return (
-    <section className="card break-inside-avoid p-5">
-      <h2 className="text-[16px] font-semibold">{section.heading}</h2>
-      {section.note && <p className="mt-1 text-[12px] text-ink-3">{section.note}</p>}
-      <ul className="mt-3 space-y-2.5">
+    <section className="break-inside-avoid">
+      <SectionHeading n={n} section={section} />
+      <ul className="space-y-2.5">
         {items.map((it) => (
           <li key={it.label}>
             <div className="flex items-baseline justify-between gap-3 text-[14px]">
@@ -155,23 +246,19 @@ function SummaryCard({ section }: { section: Section }) {
   );
 }
 
-function TableCard({ section }: { section: Section }) {
+function TableCard({ section, n }: { section: Section; n: number }) {
   const t = section.table!;
   return (
-    <section className="card overflow-hidden print:break-inside-auto print:border-0">
-      <div className="flex flex-wrap items-baseline justify-between gap-2 border-b border-line px-5 py-3.5">
-        <h2 className="text-[16px] font-semibold">{section.heading}</h2>
-        <span className="text-[12px] text-ink-3">{t.rows.length.toLocaleString("en-UG")} row{t.rows.length === 1 ? "" : "s"}</span>
-      </div>
-      {section.note && <p className="px-5 pt-3 text-[12px] text-ink-3">{section.note}</p>}
+    <section className="print:break-inside-auto">
+      <SectionHeading n={n} section={section} aside={<span className="text-[12px] text-ink-3">{t.rows.length.toLocaleString("en-UG")} row{t.rows.length === 1 ? "" : "s"}</span>} />
       {t.rows.length === 0 ? (
-        <p className="px-5 py-6 text-[14px] text-ink-2">Nothing to list.</p>
+        <p className="rounded-[10px] border border-dashed border-line px-5 py-6 text-[14px] text-ink-2">Nothing to list.</p>
       ) : (
-        <div className="max-h-[70vh] overflow-auto print:max-h-none print:overflow-visible">
+        <div className="max-h-[70vh] overflow-auto rounded-[10px] border border-line print:max-h-none print:overflow-visible">
           <table className="w-full text-[14px] print:text-[10px]">
-            <thead className="sticky top-0 z-10 bg-surface-2 text-left text-[11px] uppercase tracking-wider text-ink-2">
+            <thead className="sticky top-0 z-10 bg-primary text-left text-[11px] uppercase tracking-wider text-primary-ink print:[print-color-adjust:exact]">
               <tr>
-                <th scope="col" className="w-10 px-3 py-2.5 text-right font-semibold">#</th>
+                <th scope="col" className="w-10 px-3 py-2.5 text-right font-semibold">No.</th>
                 {t.columns.map((c) => <th key={c.key} scope="col" className="px-3 py-2.5 font-semibold">{c.label}</th>)}
               </tr>
             </thead>
@@ -283,7 +370,7 @@ async function ParamsForm({ reportKey, p, ctx }: { reportKey: ReportKey; p: Reco
   }
   if (controls.length === 0) return null;
   return (
-    <form className="flex flex-wrap items-end gap-3 border-t border-line bg-surface-2/50 px-5 py-4 md:px-7 print:hidden" action={`/reports/${reportKey}`}>
+    <form className="card mb-5 flex flex-wrap items-end gap-3 px-5 py-4 md:px-6 print:hidden" action={`/reports/${reportKey}`}>
       <p className="w-full text-[11px] font-semibold uppercase tracking-[0.1em] text-ink-3">Report options</p>
       {controls.map((c, i) => <div key={i}>{c}</div>)}
       <button className="btn btn-primary">Update report</button>
