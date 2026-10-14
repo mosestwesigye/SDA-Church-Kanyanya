@@ -297,7 +297,7 @@ async function ParamsForm({ reportKey, p, ctx }: { reportKey: ReportKey; p: Reco
     </select>
   );
   const controls: React.ReactNode[] = [];
-  if (reportKey === "quarterly") {
+  if (reportKey === "quarterly" || reportKey === "conference") {
     controls.push(field("r-year", "Year", years("year", "r-year")));
     controls.push(field("r-q", "Quarter", (
       <select id="r-q" name="quarter" defaultValue={String(p.quarter)} className={sel}>

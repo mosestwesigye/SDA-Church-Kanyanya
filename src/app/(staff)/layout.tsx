@@ -24,7 +24,7 @@ export default async function StaffLayout({ children }: { children: React.ReactN
     db.listItem.count({ where: { type: "MINISTRY", active: true } }),
     can(ctx, "correction_request", "review") ? db.correctionRequest.count({ where: { state: "PENDING" } }) : 0,
     can(ctx, "member.profile", "read")
-      ? db.member.count({ where: { AND: [memberScopeWhere(ctx), { deletedAt: null, mergedIntoId: null, purgedAt: null }, { OR: [{ status: null }, { status: { in: ["DORMANT", "SELF_TRANSFERRED", "UNDER_DISCIPLINE", "LEFT_THE_FAITH"] } }] }] } })
+      ? db.member.count({ where: { AND: [memberScopeWhere(ctx), { deletedAt: null, mergedIntoId: null, purgedAt: null }, { OR: [{ status: null }, { status: { in: ["DORMANT", "MISSING", "SELF_TRANSFERRED", "UNDER_DISCIPLINE", "LEFT_THE_FAITH"] } }] }] } })
       : 0,
   ]);
   const counts = { members, cleanup, ministries, corrections, dormant };

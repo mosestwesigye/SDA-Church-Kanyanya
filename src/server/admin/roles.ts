@@ -28,6 +28,7 @@ export const RESOURCE_LABELS: Record<Resource, string> = {
   export: "Exports & downloads",
   audit: "Audit log",
   minutes: "Board minutes",
+  conference_return: "Conference statistical return",
   "admin.users": "Admin: users",
   "admin.roles": "Admin: roles & permissions",
   "admin.lists": "Admin: lists & data rules",

@@ -31,6 +31,7 @@ export const NAV: { section: string; items: NavItem[] }[] = [
     section: "Output",
     items: [
       { href: "/reports", label: "Reports", icon: "reports", need: ["report", "read"], mobile: true },
+      { href: "/conference", label: "Conference return", icon: "conference", need: ["conference_return", "read"] },
       { href: "/import", label: "Import", icon: "import", need: ["import", "run"] },
     ],
   },

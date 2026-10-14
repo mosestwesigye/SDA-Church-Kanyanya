@@ -86,6 +86,17 @@ Changing a membership status needs no approval. The Clerk, Assistant Clerk and P
 
 Members' self-service corrections are still reviewed by the clerk (below).
 
+## Conference statistical return
+
+**Conference return** (`/conference`) produces Kanyanya's row of the Central Uganda Conference *Secretary's Statistical Report – Quarterly* (Kanyanya District, no companies).
+
+- 3a/3b attendance come from the Sabbath head counts entered on the same page (the 2nd and 7th Sabbaths of the quarter). 16a/16b are left blank.
+- 3c is last quarter's closing figure once that return is marked as sent; before that it is worked out from the register (Active, Irregular, Under discipline and Dormant members count as Conference membership).
+- 4a Baptism and 4b Profession of faith come from those changes under **Change status**; 4c/5a from transfers, 5b deaths, 5c changes to *Left the Faith*, 5d changes to *Missing*. 4d/5e adjustments are manual.
+- The clerk can replace any figure with their own and must give a reason; it is shaded on the form and audited. Line 6 is always 3c + added − dropped, and a register check shows any gap.
+- Downloads: the CUC form layout as Excel, and a letterhead PDF with sign-off (also under Reports). **Mark as sent** locks the figures; a return can be reopened with a reason.
+- Access: `conference_return` read (Clerks, Pastor, Elders) and manage (Clerks, Admin).
+
 ## Active register and dormant members
 
 On the Church Clerk's guidance, the dashboard and reports count only **Active** and **Irregular** members (the active register). Everyone else is listed under **Dormant members**:

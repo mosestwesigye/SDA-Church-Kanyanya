@@ -50,6 +50,8 @@ export const CATALOG = {
   audit: ["read"],
   // Church board / business meeting minutes.
   minutes: ["read", "manage"],
+  // Conference Secretary's Statistical Report (quarterly return) and Sabbath attendance.
+  conference_return: ["read", "manage"],
   "admin.users": ["manage"],
   "admin.roles": ["manage"],
   "admin.lists": ["manage"],

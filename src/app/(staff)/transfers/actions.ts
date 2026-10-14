@@ -22,7 +22,7 @@ export async function createRequestAction(form: FormData) {
     let documentId: string | undefined;
     const file = form.get("file");
     if (file instanceof File && file.size > 0) {
-      const kind = type === "DEATH" ? "DEATH_CERTIFICATE" : type.startsWith("TRANSFER") ? "TRANSFER_LETTER" : "BOARD_MINUTE";
+      const kind = type === "DEATH" ? "DEATH_CERTIFICATE" : type.startsWith("TRANSFER") ? "TRANSFER_LETTER" : type === "BAPTISM" || type === "PROFESSION_OF_FAITH" ? "OTHER" : "BOARD_MINUTE";
       documentId = (await uploadDocument(db, ctx, memberId, kind, { name: file.name, data: Buffer.from(await file.arrayBuffer()) })).id;
     }
     const req = await createStatusRequest(db, ctx, {

@@ -32,6 +32,7 @@ enum MembershipStatus {
   DECEASED
   LEFT_THE_FAITH
   DORMANT
+  MISSING
 }
 
 enum MaritalStatus {
@@ -95,6 +96,8 @@ enum StatusChangeType {
   DISCIPLINE
   RESTORATION
   STATUS_UPDATE
+  BAPTISM
+  PROFESSION_OF_FAITH
 }
 
 enum TransferDirection {
@@ -827,3 +830,39 @@ model MinutesFile {
   @@index([minutesId])
 }
 
+
+/// Sabbath head count (one figure per Sabbath), used for the conference return.
+model SabbathAttendance {
+  id           String   @id @default(cuid())
+  sabbath      DateTime @unique @db.Date
+  count        Int
+  recordedById String
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+}
+
+enum ConferenceReturnState {
+  DRAFT
+  SENT
+}
+
+/// The church's row of the Conference Secretary's Statistical Report for one quarter.
+/// `overrides` holds the clerk's manual figures ({ line: { value, reason } }); `figures`
+/// is the frozen row once the return is marked as sent.
+model ConferenceReturn {
+  id           String                @id @default(cuid())
+  year         Int
+  quarter      Int
+  state        ConferenceReturnState @default(DRAFT)
+  overrides    Json                  @default("{}")
+  figures      Json?
+  pastorName   String?
+  dateSent     DateTime?             @db.Date
+  dateReceived DateTime?             @db.Date
+  sentById     String?
+  updatedById  String?
+  createdAt    DateTime              @default(now())
+  updatedAt    DateTime              @updatedAt
+
+  @@unique([year, quarter])
+}

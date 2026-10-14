@@ -32,7 +32,7 @@ describe("report permissions", () => {
     expect(availableReports(treasurer)).toEqual([]);
     await expect(buildReport(db, treasurer, "zones", parseReportParams("zones", {}))).rejects.toBeInstanceOf(ForbiddenError);
     expect(availableReports(clerk)).toEqual([
-      "quarterly", "overview", "movements", "status", "age-groups", "ministry-roster", "zones", "families", "birthdays", "data-quality", "minutes",
+      "quarterly", "conference", "overview", "movements", "status", "age-groups", "ministry-roster", "zones", "families", "birthdays", "data-quality", "minutes",
     ]);
     // Families need sensitive access; minutes need minutes access.
     const elder = await userWith(db, ["ELDER"]);
@@ -40,6 +40,7 @@ describe("report permissions", () => {
     const head = await userWith(db, ["MINISTRY_HEAD"], { ministryLabels: ["Youth"] });
     expect(availableReports(head)).not.toContain("families");
     expect(availableReports(head)).not.toContain("minutes");
+    expect(availableReports(head)).not.toContain("conference");
     await expect(buildReport(db, head, "minutes", parseReportParams("minutes", {}))).rejects.toBeInstanceOf(ForbiddenError);
   });
 

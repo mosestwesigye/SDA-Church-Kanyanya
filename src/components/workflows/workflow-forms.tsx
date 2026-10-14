@@ -31,6 +31,8 @@ function Msg({ msg }: { msg: { ok: boolean; text: string } | null }) {
 }
 
 const TYPES = [
+  { id: "BAPTISM", label: "Baptism", help: "Member joined by baptism. Status becomes Active; counted under Baptism on the Conference return." },
+  { id: "PROFESSION_OF_FAITH", label: "Profession of faith", help: "Member joined (or rejoined) by profession of faith. Status becomes Active." },
   { id: "TRANSFER_OUT", label: "Transfer out", help: "Member is moving to another church. Status becomes Self Transferred." },
   { id: "TRANSFER_IN", label: "Transfer in", help: "Member’s letter is coming from another church. Status becomes Active." },
   { id: "DEATH", label: "Record a death", help: "Status becomes Deceased." },

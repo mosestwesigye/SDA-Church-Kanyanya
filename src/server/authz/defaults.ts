@@ -44,6 +44,7 @@ export const DEFAULT_MATRIX: Record<RoleKey, Grant[]> = {
     export: ["run"],
     audit: ["read"],
     minutes: ["read", "manage"],
+    conference_return: ["read", "manage"],
   }),
 
   ASSISTANT_CLERK: g({
@@ -62,6 +63,7 @@ export const DEFAULT_MATRIX: Record<RoleKey, Grant[]> = {
     export: ["run"],
     audit: ["read"],
     minutes: ["read", "manage"],
+    conference_return: ["read", "manage"],
   }),
 
   PASTOR: g({
@@ -75,6 +77,7 @@ export const DEFAULT_MATRIX: Record<RoleKey, Grant[]> = {
     export: ["run"],
     audit: ["read"],
     minutes: ["read"],
+    conference_return: ["read"],
   }),
 
   ELDER: g({
@@ -85,6 +88,7 @@ export const DEFAULT_MATRIX: Record<RoleKey, Grant[]> = {
     document: ["read"],
     report: ["read"],
     minutes: ["read"],
+    conference_return: ["read"],
   }),
 
   MINISTRY_HEAD: g(

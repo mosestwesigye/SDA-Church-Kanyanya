@@ -28,7 +28,7 @@ export type NormalizedRow = {
     phoneRaw: string | null;
     phoneE164: string | null;
     email: string | null;
-    status: "ACTIVE" | "IRREGULAR" | "SELF_TRANSFERRED" | "UNDER_DISCIPLINE" | "DECEASED" | "LEFT_THE_FAITH" | "DORMANT" | null;
+    status: "ACTIVE" | "IRREGULAR" | "SELF_TRANSFERRED" | "UNDER_DISCIPLINE" | "DECEASED" | "LEFT_THE_FAITH" | "DORMANT" | "MISSING" | null;
     maritalStatus: "SINGLE" | "MARRIED" | "SEPARATED" | "COHABITING" | "WIDOWED" | null;
     spouseName: string | null;
     nextOfKinName: string | null;
@@ -61,7 +61,7 @@ const STATUS: Record<string, NormalizedRow["columns"]["status"]> = {
   selftransferred: "SELF_TRANSFERRED", transferred: "SELF_TRANSFERRED", selftransfered: "SELF_TRANSFERRED",
   underdiscipline: "UNDER_DISCIPLINE", discipline: "UNDER_DISCIPLINE", censured: "UNDER_DISCIPLINE",
   deceased: "DECEASED", dead: "DECEASED", late: "DECEASED",
-  leftthefaith: "LEFT_THE_FAITH", apostasy: "LEFT_THE_FAITH", missing: "LEFT_THE_FAITH",
+  leftthefaith: "LEFT_THE_FAITH", apostasy: "LEFT_THE_FAITH", missing: "MISSING",
   dormant: "DORMANT",
 };
 

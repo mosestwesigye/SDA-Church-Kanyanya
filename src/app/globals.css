@@ -31,6 +31,7 @@
   --status-left: #8a5a9e;
   --status-unknown: #a3aab3;
   --status-dormant: #7a6a58;
+  --status-missing: #9a6b3c;
 
   --card-shadow: 0 1px 2px rgb(16 24 40 / 0.04), 0 1px 3px rgb(16 24 40 / 0.05);
   --radius: 6px;

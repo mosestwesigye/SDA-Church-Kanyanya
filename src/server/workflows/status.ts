@@ -16,13 +16,15 @@ export const REQUEST_TYPES: Record<StatusChangeType, { label: string; to: Member
   DISCIPLINE: { label: "Discipline", to: "UNDER_DISCIPLINE", event: "DISCIPLINE" },
   RESTORATION: { label: "Restoration", to: "ACTIVE", event: "RESTORATION" },
   STATUS_UPDATE: { label: "Other status change", to: null, event: "STATUS_CHANGE" },
+  BAPTISM: { label: "Baptism", to: "ACTIVE", event: "BAPTISM" },
+  PROFESSION_OF_FAITH: { label: "Profession of faith", to: "ACTIVE", event: "PROFESSION_OF_FAITH" },
 };
 
 export const requestInput = z
   .object({
     memberId: z.string().min(1),
-    type: z.enum(["TRANSFER_IN", "TRANSFER_OUT", "DEATH", "DISCIPLINE", "RESTORATION", "STATUS_UPDATE"]),
-    toStatus: z.enum(["ACTIVE", "IRREGULAR", "SELF_TRANSFERRED", "UNDER_DISCIPLINE", "DECEASED", "LEFT_THE_FAITH", "DORMANT"]).optional(),
+    type: z.enum(["TRANSFER_IN", "TRANSFER_OUT", "DEATH", "DISCIPLINE", "RESTORATION", "STATUS_UPDATE", "BAPTISM", "PROFESSION_OF_FAITH"]),
+    toStatus: z.enum(["ACTIVE", "IRREGULAR", "SELF_TRANSFERRED", "UNDER_DISCIPLINE", "DECEASED", "LEFT_THE_FAITH", "DORMANT", "MISSING"]).optional(),
     reason: z.string().trim().min(5, "Give the reason (at least a few words)").max(1000),
     effectiveDate: z.iso.date(),
     documentId: z.string().optional(),
@@ -59,7 +61,9 @@ export async function createStatusRequest(db: Db, ctx: AuthContext, input: z.inp
   const m = await scopedMember(db, ctx, v.memberId);
   if (m.deletedAt) throw new ValidationError("Restore this member first.");
   const to = (v.type === "STATUS_UPDATE" ? v.toStatus : REQUEST_TYPES[v.type].to)!;
-  if (to === m.status) throw new ValidationError(`${m.memberId} is already ${STATUS_META[to].label}.`);
+  // Baptism and profession of faith are recorded even for a member already marked Active.
+  const joining = v.type === "BAPTISM" || v.type === "PROFESSION_OF_FAITH";
+  if (to === m.status && !joining) throw new ValidationError(`${m.memberId} is already ${STATUS_META[to].label}.`);
   if (m.status === "DECEASED" && v.type !== "STATUS_UPDATE") throw new ValidationError("This member is recorded as deceased.");
   const open = await db.statusChangeRequest.findFirst({ where: { memberId: m.id, state: "PENDING" } });
   if (open) throw new ConflictError("This member has an unfinished request from before. Apply or discard it under Transfers & status first.");
@@ -124,6 +128,8 @@ async function applyStatusChange(tx: Prisma.TransactionClient, ctx: AuthContext,
         req.type === "TRANSFER_OUT" ? `Transferred out to ${req.transfer?.otherChurch}`
         : req.type === "TRANSFER_IN" ? `Transferred in from ${req.transfer?.otherChurch}`
         : req.type === "DEATH" ? "Death recorded"
+        : req.type === "BAPTISM" ? "Joined by baptism"
+        : req.type === "PROFESSION_OF_FAITH" ? "Joined by profession of faith"
         : `Status: ${before ? STATUS_META[before].label : "Not recorded"} → ${STATUS_META[req.toStatus].label}`,
       detail: req.reason,
       fromStatus: before,

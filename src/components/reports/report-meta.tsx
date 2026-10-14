@@ -4,6 +4,10 @@ export const REPORT_META: Record<string, { includes: string[]; icon: React.React
     includes: ["Opening and closing membership", "Gains and losses by type", "Status changes in the quarter"],
     icon: <path d="M4 20V10m5.5 10V4M15 20v-7m5.5 7V8" />,
   },
+  conference: {
+    includes: ["Lines 3a–6 of the Central Uganda Conference form", "Sabbath attendance", "Manual figures with the clerk’s reasons"],
+    icon: <><path d="M6 3.5h9l3.5 3.5v13.5H6z" /><path d="M14.5 3.5V7.5h4M9 12h6M9 15.5h6M9 8.5h2.5" /></>,
+  },
   overview: {
     includes: ["Status, gender and age with percentages", "Every zone and ministry", "Members joined in the last five years"],
     icon: <><rect x="3.5" y="3.5" width="7" height="7" rx="1.5" /><rect x="13.5" y="3.5" width="7" height="7" rx="1.5" /><rect x="3.5" y="13.5" width="7" height="7" rx="1.5" /><path d="M14 17h6M17 14v6" /></>,

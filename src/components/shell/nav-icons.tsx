@@ -66,6 +66,12 @@ const PATHS: Record<string, React.ReactNode> = {
       <path d="M14 3v5h5M9.5 17v-3M12.5 17v-6M15.5 17v-4" />
     </>
   ),
+  conference: (
+    <>
+      <path d="M4 20h16M5 20V9.5L12 5l7 4.5V20" />
+      <path d="M9 20v-5h6v5M12 5V2.5M10.5 3.5h3" />
+    </>
+  ),
   import: (
     <>
       <path d="M12 15V3m0 12-4-4m4 4 4-4" />

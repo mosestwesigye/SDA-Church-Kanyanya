@@ -16,6 +16,7 @@ const TAB_NOTES: Record<string, string> = {
   all: "Everyone not Active or Irregular, except the deceased.",
   none: "No status recorded yet. Select several to update them together.",
   dormant: "Members recorded as dormant (not attending). Mark them Active or Irregular when they return.",
+  missing: "Members whose whereabouts are unknown (reported as Missing to the Conference). Mark them Active or Irregular when they are found.",
   self: "Members recorded as self transferred. Mark them Active or Irregular when they return.",
   discipline: "Members under church discipline. Marking one Active records a restoration.",
   left: "Members recorded as having left the faith. Mark them Active or Irregular when they return.",

@@ -10,6 +10,8 @@ import type { DbOrTx } from "../db";
 import { ForbiddenError } from "../errors";
 import { KINDS, relationLabel } from "../households/service";
 import { MEETING_TYPES } from "../minutes/service";
+import { getConferenceReturn, type LineKey } from "../conference/service";
+import { LETTERHEAD } from "@/lib/letterhead";
 import { ACTIVE_STATUSES, activeWhere, isActiveStatus } from "../members/register";
 import { directoryQuerySchema, listMembers, type DirectoryRow } from "../members/directory";
 import { ministryRoster } from "../ministries/service";
@@ -19,7 +21,7 @@ import type { Table } from "../exports/tabular";
 export const REPORT_MAX_ROWS = 5000;
 
 export type ReportKey =
-  | "quarterly" | "overview" | "movements" | "status" | "age-groups" | "ministry-roster" | "zones" | "families" | "birthdays" | "data-quality" | "minutes";
+  | "quarterly" | "conference" | "overview" | "movements" | "status" | "age-groups" | "ministry-roster" | "zones" | "families" | "birthdays" | "data-quality" | "minutes";
 
 type ReportDef = {
   title: string;
@@ -36,6 +38,7 @@ type ReportDef = {
 
 export const REPORTS: Record<ReportKey, ReportDef> = {
   quarterly: { title: "Clerk’s quarterly report", category: "Conference", code: "QTR", signOff: true, description: "Membership at the start and end of a quarter, gains and losses by type, and the register breakdown.", needsProfile: true },
+  conference: { title: "Conference statistical return", category: "Conference", code: "CUC", signOff: true, description: "Central Uganda Conference Secretary’s Statistical Report for a quarter: attendance, membership added and dropped.", needsProfile: false, needs: [["conference_return", "read"]] },
   overview: { title: "Membership overview", category: "Membership", code: "OVW", signOff: true, description: "The register at a glance: status, gender, age, zones and ministries, with percentages.", needsProfile: true },
   movements: { title: "Membership changes", category: "Conference", code: "MOV", signOff: true, description: "Baptisms, professions of faith, transfers, deaths and other status changes between two dates.", needsProfile: true },
   status: { title: "Active & irregular members", category: "Membership", code: "REG", signOff: true, description: "The active register: Active and Irregular members, counted and listed under each status.", needsProfile: true },
@@ -109,6 +112,10 @@ const paramSchemas = {
   "age-groups": z.object({ group: z.string().optional().catch(undefined), zone: z.string().optional().catch(undefined) }),
   families: z.object({}),
   "data-quality": z.object({ zone: z.string().optional().catch(undefined), below: z.coerce.number().int().min(1).max(100).catch(100) }),
+  conference: z.object({
+    year: z.coerce.number().int().min(2000).max(2100).catch(() => now().getUTCFullYear()),
+    quarter: z.coerce.number().int().min(1).max(4).catch(currentQuarter),
+  }),
   minutes: z.object({ year: z.coerce.number().int().min(2000).max(2100).catch(() => now().getUTCFullYear()) }),
 };
 
@@ -591,6 +598,58 @@ async function dataQuality(db: DbOrTx, ctx: AuthContext, p: ReportParams["data-q
   };
 }
 
+async function conferenceReturnReport(db: DbOrTx, ctx: AuthContext, p: ReportParams["conference"]): Promise<ReportBody> {
+  const r = await getConferenceReturn(db, ctx, p);
+  const line = (k: LineKey) => r.lines.find((l) => l.key === k)!;
+  const rows = [
+    ...r.lines.map((l) => ({
+      code: l.code,
+      item: l.label,
+      figure: l.value ?? "",
+      source: l.override ? `Entered by the clerk: ${l.override.reason}` : l.key === "opening" && r.openingFrom === "previous" ? "Last quarter’s closing figure" : l.source,
+    })),
+    { code: "6", item: "Church membership at end of quarter", figure: r.closing, source: "3c + 4a to 4d − 5a to 5e" },
+    { code: "16a", item: "Church attendance — 2nd Sabbath count", figure: "", source: "Left blank" },
+    { code: "16b", item: "Church attendance — 7th Sabbath count", figure: "", source: "Left blank" },
+  ];
+  return {
+    title: REPORTS.conference.title,
+    subtitle: `${LETTERHEAD.district} · ${r.label} · ${fmtDate(r.range.start)} – ${fmtDate(r.range.last)}`,
+    rowCount: rows.length,
+    sections: [
+      {
+        heading: "Summary",
+        note: `${r.state === "SENT" ? `Sent to the Conference${r.dateSent ? ` on ${fmtDate(r.dateSent)}` : ""}.` : "Draft — not yet sent to the Conference."} Submitted by ${r.pastorName ?? "—"} (Pastor).`,
+        summary: [
+          { label: "Membership at beginning of quarter", value: line("opening").value ?? 0 },
+          { label: "Members added", value: r.added },
+          { label: "Members dropped", value: r.dropped },
+          { label: "Membership at end of quarter", value: r.closing },
+          { label: "Attendance, 7th Sabbath", value: line("att7").value ?? "—" },
+        ],
+      },
+      {
+        heading: "Statistical report",
+        note: "Line numbers follow the Central Uganda Conference form. Churches: Kanyanya (no companies).",
+        table: {
+          title: "Statistical report",
+          columns: [
+            { key: "code", label: "Line", width: 6 },
+            { key: "item", label: "Item", width: 34 },
+            { key: "figure", label: "Figure", width: 9 },
+            { key: "source", label: "Source", width: 40 },
+          ],
+          rows,
+        },
+      },
+      {
+        heading: "Sabbath attendance",
+        summary: r.sabbaths.map((s) => ({ label: `Sabbath ${s.n} · ${fmtDate(new Date(`${s.date}T00:00:00Z`))}${s.n === 2 || s.n === 7 ? " (reported)" : ""}`, value: s.count ?? "—" })),
+      },
+    ],
+  };
+}
+
 async function minutesRegister(db: DbOrTx, ctx: AuthContext, p: ReportParams["minutes"]) {
   assertCan(ctx, "minutes", "read");
   const list = await db.meetingMinutes.findMany({
@@ -658,6 +717,7 @@ export async function buildReport<K extends ReportKey>(db: DbOrTx, ctx: AuthCont
   }
   const builders: { [R in ReportKey]: (p: ReportParams[R]) => Promise<ReportBody> } = {
     quarterly: (p) => quarterly(db, ctx, p, omitted),
+    conference: (p) => conferenceReturnReport(db, ctx, p),
     overview: (p) => overview(db, ctx, p),
     movements: (p) => movements(db, ctx, p, omitted),
     status: (p) => byStatus(db, ctx, p, omitted),

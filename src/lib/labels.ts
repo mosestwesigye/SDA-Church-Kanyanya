@@ -6,6 +6,7 @@ export const STATUS_META = {
   DECEASED: { label: "Deceased", color: "var(--status-deceased)" },
   LEFT_THE_FAITH: { label: "Left the Faith", color: "var(--status-left)" },
   DORMANT: { label: "Dormant", color: "var(--status-dormant)" },
+  MISSING: { label: "Missing", color: "var(--status-missing)" },
 } as const;
 export type StatusKey = keyof typeof STATUS_META;
 export const STATUS_KEYS = Object.keys(STATUS_META) as StatusKey[];

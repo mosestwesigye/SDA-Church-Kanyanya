@@ -29,7 +29,7 @@ export const memberPatchSchema = z
     zoneId: z.string().nullable(),
     phone: z.string().trim().max(40).nullable(),
     email: z.email().max(120).nullable().or(z.literal("").transform(() => null)),
-    status: z.enum(["ACTIVE", "IRREGULAR", "SELF_TRANSFERRED", "UNDER_DISCIPLINE", "DECEASED", "LEFT_THE_FAITH", "DORMANT"]).nullable(),
+    status: z.enum(["ACTIVE", "IRREGULAR", "SELF_TRANSFERRED", "UNDER_DISCIPLINE", "DECEASED", "LEFT_THE_FAITH", "DORMANT", "MISSING"]).nullable(),
     maritalStatus: z.enum(["SINGLE", "MARRIED", "SEPARATED", "COHABITING", "WIDOWED"]).nullable(),
     spouseMemberId: z.string().nullable(),
     spouseName: z.string().trim().max(120).nullable(),
